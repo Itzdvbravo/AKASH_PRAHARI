@@ -13,12 +13,19 @@ import {
   ComparisonResponse,
   ChangeDetectionResponse
 } from './types/api.types';
-import { MOCK_COMPARISON_PARIS, MOCK_CHANGE_DETECTION_PARIS } from './mock/mockData';
+import {
+  MOCK_COMPARISON_PARIS,
+  MOCK_CHANGE_DETECTION_PARIS,
+  LOCATIONS,
+  buildComparison,
+  buildChangeDetection
+} from './mock/mockData';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'search' | 'comparison' | 'system'>('search');
   const [results, setResults] = useState<SearchResultItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [activeQuery, setActiveQuery] = useState('');
 
   // Comparison State
   const [comparison, setComparison] = useState<ComparisonResponse>(MOCK_COMPARISON_PARIS);
@@ -34,6 +41,7 @@ export default function App() {
 
   const handleSearch = async (queryText: string, sensor: Sensor, location: string) => {
     setIsSearching(true);
+    setActiveQuery(queryText);
     try {
       const res = await searchTiles({
         query_type: 'text',
@@ -87,6 +95,18 @@ export default function App() {
     }
   };
 
+  const handleLocationChange = (locId: string) => {
+    const loc = LOCATIONS.find(l => l.id === locId);
+    if (loc) {
+      setComparison(buildComparison(loc));
+      setChangeDetection(buildChangeDetection(loc));
+    }
+  };
+
+  const resultLabel = activeQuery
+    ? `"${activeQuery.length > 60 ? activeQuery.slice(0, 60) + '…' : activeQuery}"`
+    : 'All Locations';
+
   return (
     <div className="app-container">
       <Header activeTab={activeTab} onSelectTab={setActiveTab} mockMode={true} />
@@ -97,14 +117,29 @@ export default function App() {
             <SearchBar onSearch={handleSearch} isLoading={isSearching} />
 
             <div className="results-header">
-              <h2 className="section-title">Retrieved Satellite Scenes</h2>
-              <span className="results-count">
-                {results.length} candidate tile{results.length === 1 ? '' : 's'} found
-              </span>
+              <div>
+                <h2 className="section-title">Retrieved Satellite Scenes</h2>
+                {activeQuery && (
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                    Query: {resultLabel}
+                  </p>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                {isSearching && (
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <span className="spinner" /> Retrieving…
+                  </span>
+                )}
+                <span className="results-count">
+                  {results.length} candidate tile{results.length === 1 ? '' : 's'} found
+                </span>
+              </div>
             </div>
 
             {results.length === 0 && !isSearching ? (
               <div className="ui-card" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                <div style={{ fontSize: '2rem', marginBottom: '0.75rem' }}>🛰️</div>
                 No satellite scenes match the selected filters or query. Try resetting filters.
               </div>
             ) : (
@@ -127,6 +162,7 @@ export default function App() {
               comparison={comparison}
               changeDetection={changeDetection}
               onRefreshDetection={handleRefreshDetection}
+              onLocationChange={handleLocationChange}
               isLoading={isComparing}
             />
 

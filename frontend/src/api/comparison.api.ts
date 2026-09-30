@@ -5,7 +5,12 @@ import {
   ChangeDetectionRequest,
   ChangeDetectionResponse
 } from '../types/api.types';
-import { MOCK_COMPARISON_PARIS, MOCK_CHANGE_DETECTION_PARIS } from '../mock/mockData';
+import {
+  LOCATIONS,
+  DEFAULT_LOCATION,
+  buildComparison,
+  buildChangeDetection
+} from '../mock/mockData';
 
 export async function fetchComparison(request: ComparisonRequest): Promise<ComparisonResponse> {
   try {
@@ -13,7 +18,8 @@ export async function fetchComparison(request: ComparisonRequest): Promise<Compa
     return response.data;
   } catch {
     await new Promise((res) => setTimeout(res, 300));
-    return MOCK_COMPARISON_PARIS;
+    const loc = LOCATIONS.find(l => l.id === request.location_id) || DEFAULT_LOCATION;
+    return buildComparison(loc);
   }
 }
 
@@ -23,6 +29,8 @@ export async function detectChange(request: ChangeDetectionRequest): Promise<Cha
     return response.data;
   } catch {
     await new Promise((res) => setTimeout(res, 350));
-    return MOCK_CHANGE_DETECTION_PARIS;
+    const loc = LOCATIONS.find(l => l.id === request.location_id) || DEFAULT_LOCATION;
+    return buildChangeDetection(loc);
   }
 }
+

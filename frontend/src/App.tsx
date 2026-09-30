@@ -5,20 +5,29 @@ import { SearchResultCard } from './features/search/SearchResultCard';
 import { ComparisonViewer } from './features/comparison/ComparisonViewer';
 import { AnalystSummaryCard } from './features/comparison/AnalystSummaryCard';
 import { SystemStatusView } from './features/system/SystemStatusView';
-import { searchTiles } from './api/search.api';
-import { fetchComparison, detectChange } from './api/comparison.api';
 import {
   SearchResultItem,
-  Sensor,
   ComparisonResponse,
-  ChangeDetectionResponse
+  ChangeDetectionResponse,
 } from './types/api.types';
-import { MOCK_COMPARISON_PARIS, MOCK_CHANGE_DETECTION_PARIS } from './mock/mockData';
+import {
+  LOCATIONS,
+  getSearchResults,
+  matchQueryToPreset,
+  buildComparison,
+  buildChangeDetection,
+  MOCK_COMPARISON_PARIS,
+  MOCK_CHANGE_DETECTION_PARIS,
+} from './mock/mockData';
+
+// Simulated async delay for realism
+const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'search' | 'comparison' | 'system'>('search');
   const [results, setResults] = useState<SearchResultItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [activeQuery, setActiveQuery] = useState('');
 
   // Comparison State
   const [comparison, setComparison] = useState<ComparisonResponse>(MOCK_COMPARISON_PARIS);
@@ -27,25 +36,22 @@ export default function App() {
   );
   const [isComparing, setIsComparing] = useState(false);
 
-  // Initial search load
+  // Initial load — show all locations
   useEffect(() => {
-    handleSearch('', 'any', 'all');
+    handleSearch('', 'q_all');
   }, []);
 
-  const handleSearch = async (queryText: string, sensor: Sensor, location: string) => {
+  const handleSearch = async (queryText: string, presetId: string) => {
     setIsSearching(true);
+    setActiveQuery(queryText);
+    await delay(600); // simulate network
     try {
-      const res = await searchTiles({
-        query_type: 'text',
-        query_text: queryText,
-        filters: {
-          sensor,
-          location
-        }
-      });
-      setResults(res.results);
-    } catch {
-      // Handled inside searchTiles with fallback
+      let pid = presetId;
+      if (!pid) {
+        pid = matchQueryToPreset(queryText).id;
+      }
+      const res = getSearchResults(pid);
+      setResults(res);
     } finally {
       setIsSearching(false);
     }
@@ -54,21 +60,13 @@ export default function App() {
   const handleInspectTile = async (item: SearchResultItem) => {
     setActiveTab('comparison');
     setIsComparing(true);
+    await delay(800); // simulate detection pipeline
     try {
-      const comp = await fetchComparison({
-        location_id: item.tile_ref.location_id,
-        tile_id: item.tile_ref.tile_id,
-        date_before: item.available_dates[0] || '2018-03-10',
-        date_after: item.tile_ref.date,
-        sensor: item.tile_ref.sensor
-      });
-      setComparison(comp);
-
-      const det = await detectChange({
-        location_id: item.tile_ref.location_id,
-        tile_id: item.tile_ref.tile_id
-      });
-      setChangeDetection(det);
+      const loc = LOCATIONS.find(l => l.id === item.tile_ref.location_id);
+      if (loc) {
+        setComparison(buildComparison(loc));
+        setChangeDetection(buildChangeDetection(loc));
+      }
     } finally {
       setIsComparing(false);
     }
@@ -76,16 +74,20 @@ export default function App() {
 
   const handleRefreshDetection = async () => {
     setIsComparing(true);
+    await delay(500);
     try {
-      const det = await detectChange({
-        location_id: comparison.before.tile_ref.location_id,
-        tile_id: comparison.before.tile_ref.tile_id
-      });
-      setChangeDetection(det);
+      const loc = LOCATIONS.find(l => l.id === comparison.before.tile_ref.location_id);
+      if (loc) {
+        setChangeDetection(buildChangeDetection(loc));
+      }
     } finally {
       setIsComparing(false);
     }
   };
+
+  const resultLabel = activeQuery
+    ? `"${activeQuery.length > 60 ? activeQuery.slice(0, 60) + '…' : activeQuery}"`
+    : 'All Locations';
 
   return (
     <div className="app-container">
@@ -97,15 +99,30 @@ export default function App() {
             <SearchBar onSearch={handleSearch} isLoading={isSearching} />
 
             <div className="results-header">
-              <h2 className="section-title">Retrieved Satellite Scenes</h2>
-              <span className="results-count">
-                {results.length} candidate tile{results.length === 1 ? '' : 's'} found
-              </span>
+              <div>
+                <h2 className="section-title">Retrieved Satellite Scenes</h2>
+                {activeQuery && (
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                    Query: {resultLabel}
+                  </p>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                {isSearching && (
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <span className="spinner" /> Retrieving…
+                  </span>
+                )}
+                <span className="results-count">
+                  {results.length} candidate tile{results.length === 1 ? '' : 's'} found
+                </span>
+              </div>
             </div>
 
             {results.length === 0 && !isSearching ? (
               <div className="ui-card" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-                No satellite scenes match the selected filters or query. Try resetting filters.
+                <div style={{ fontSize: '2rem', marginBottom: '0.75rem' }}>🛰️</div>
+                No satellite scenes match the query. Try a different search.
               </div>
             ) : (
               <div className="results-grid">

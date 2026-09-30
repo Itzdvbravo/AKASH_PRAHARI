@@ -552,3 +552,177 @@
   font-weight: 600;
   color: var(--text-primary);
 }
+
+/* ── Search Autocomplete Dropdown ───────────────────────────────────────── */
+
+.search-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background-color: #141c2e;
+  border: 1px solid var(--border-accent);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7);
+  z-index: 200;
+  overflow: hidden;
+  animation: dropdown-appear 0.12s ease;
+}
+
+@keyframes dropdown-appear {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.search-dropdown-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 0.9rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.search-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.7rem 1rem;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+
+.search-dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.search-dropdown-item:hover,
+.search-dropdown-item.highlighted {
+  background-color: rgba(6, 182, 212, 0.08);
+}
+
+.dropdown-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.dropdown-query {
+  flex: 1;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dropdown-category {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+
+/* ── Epoch toggle on result card thumbnails ──────────────────────────────── */
+
+.epoch-toggle {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  display: flex;
+  border-radius: 5px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.18);
+  backdrop-filter: blur(6px);
+  z-index: 5;
+}
+
+.epoch-btn {
+  background: rgba(0,0,0,0.55);
+  border: none;
+  color: rgba(255,255,255,0.65);
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.22rem 0.5rem;
+  cursor: pointer;
+  transition: all 0.12s;
+  letter-spacing: 0.04em;
+}
+
+.epoch-btn.active {
+  background: var(--accent-cyan);
+  color: #0b0f19;
+}
+
+.epoch-btn:hover:not(.active) {
+  background: rgba(255,255,255,0.15);
+  color: #fff;
+}
+
+/* ── Image overlaid badges ───────────────────────────────────────────────── */
+
+.img-date-badge {
+  position: absolute;
+  bottom: 0.5rem;
+  left: 0.5rem;
+  background: rgba(0, 0, 0, 0.72);
+  color: rgba(255,255,255,0.85);
+  font-size: 0.68rem;
+  font-family: var(--font-mono);
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  backdrop-filter: blur(4px);
+  z-index: 5;
+  pointer-events: none;
+}
+
+.img-confidence-badge {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 5;
+}
+
+/* ── Spinner ─────────────────────────────────────────────────────────────── */
+
+.spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255,255,255,0.25);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.65s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── quick-tag active state ──────────────────────────────────────────────── */
+
+.quick-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 240px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.quick-tag.active {
+  background-color: rgba(6, 182, 212, 0.12);
+  color: var(--accent-cyan);
+  border-color: rgba(6, 182, 212, 0.4);
+}
+

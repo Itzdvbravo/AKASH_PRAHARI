@@ -949,6 +949,21 @@ This is a **Phase C** architecture. It requires:
 
 ---
 
+### 11.5 Remote Training Infrastructure (Google Colab / Kaggle)
+
+As per project constraints, local GPU training is avoided due to hardware limitations, but cost must remain zero since OSCD is a relatively small dataset. 
+Therefore, **Google Colab (or Kaggle Notebooks)** is designated as the remote training infrastructure.
+
+**Workflow:**
+1. **Local Development:** Data loading scripts, `DatasetAdapter`, and model architectures (PyTorch/Mamba) are developed and version-controlled locally.
+2. **Notebook Export:** A Jupyter Notebook (`training_pipeline.ipynb`) is maintained in `notebooks/`. It clones the repository or installs the local package in the Colab environment.
+3. **Remote Execution:** The notebook downloads the OSCD dataset directly into the ephemeral Colab environment, runs the training loop using the free T4/L4 GPU, and exports the final `.pt` or `.onnx` weights.
+4. **Local Integration:** The trained weights are downloaded locally into `model_registry/` for inference within the local API.
+
+**Evidence needed:** Ensure `training_pipeline.ipynb` executes cleanly top-to-bottom on a free Colab instance without OOM errors.
+
+---
+
 ## 12. API Contracts and Shared Schemas
 
 ### 12.1 Common Types

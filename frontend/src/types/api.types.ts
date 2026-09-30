@@ -120,3 +120,50 @@ export interface ChangeDetectionResponse {
   summary: AnalystSummary;
   processing_ms: number;
 }
+
+export type TemporalIconType = 'leaf' | 'crane' | 'building' | 'detection';
+export type TemporalTagVariant = 'green' | 'yellow' | 'neutral' | 'red';
+
+export interface TemporalStageItem {
+  id: string;
+  year: string;
+  date: string;
+  imageUrl: string;
+  title: string;
+  subtitle?: string;
+  iconType: TemporalIconType;
+  variant: TemporalTagVariant;
+  sensor?: string;
+  cloudCoverPct?: number;
+}
+
+export interface TemporalPolygon {
+  points: string; // e.g. "49,32 62.5,37 56,45 49.5,39.5" in viewBox 0 0 100 100
+  label?: string;
+}
+
+export interface TemporalDetectedChanges {
+  title: string;
+  subRange: string;
+  imageUrl: string;
+  chipTitle: string;
+  chipSubtitle?: string;
+  iconType: TemporalIconType;
+  variant: TemporalTagVariant;
+  polygons: TemporalPolygon[];
+  boundingBoxes?: BoundingBox[];
+}
+
+export interface TemporalProgressionData {
+  locationId: string;
+  locationLabel: string;
+  country: string;
+  timeRange: string;
+  changeType: string;
+  earliestSupportedChange: string;
+  confidence: number;
+  stages: TemporalStageItem[];
+  detectedChanges: TemporalDetectedChanges;
+  description: string;
+  changedPixelFraction: number;
+}

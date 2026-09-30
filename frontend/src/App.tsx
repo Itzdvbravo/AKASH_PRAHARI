@@ -3,6 +3,7 @@ import { Header } from './components/Header';
 import { SearchBar } from './features/search/SearchBar';
 import { SearchResultCard } from './features/search/SearchResultCard';
 import { ComparisonViewer } from './features/comparison/ComparisonViewer';
+import { TemporalProgressionViewer } from './features/comparison/TemporalProgressionViewer';
 import { AnalystSummaryCard } from './features/comparison/AnalystSummaryCard';
 import { SystemStatusView } from './features/system/SystemStatusView';
 import {
@@ -35,6 +36,7 @@ export default function App() {
     MOCK_CHANGE_DETECTION_PARIS
   );
   const [isComparing, setIsComparing] = useState(false);
+  const [showTemporalProgression, setShowTemporalProgression] = useState(false);
 
   // Initial load — show all locations
   useEffect(() => {
@@ -140,14 +142,19 @@ export default function App() {
 
         {activeTab === 'comparison' && (
           <section aria-label="Temporal Comparison">
-            <ComparisonViewer
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
+              <button className="secondary-btn" onClick={() => setShowTemporalProgression(value => !value)}>
+                {showTemporalProgression ? 'Return to image comparison' : 'View temporal progression'}
+              </button>
+            </div>
+            {showTemporalProgression ? <TemporalProgressionViewer locationId="kaziranga" /> : <ComparisonViewer
               comparison={comparison}
               changeDetection={changeDetection}
               onRefreshDetection={handleRefreshDetection}
               isLoading={isComparing}
-            />
+            />}
 
-            {changeDetection && (
+            {!showTemporalProgression && changeDetection && (
               <AnalystSummaryCard
                 summary={changeDetection.summary}
                 processingMs={changeDetection.processing_ms}

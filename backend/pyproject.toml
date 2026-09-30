@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "backend"
+version = "0.1.0"
+description = "TerraEyes Backend API & Inference Subsystem"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn>=0.28.0",
+    "pydantic>=2.6.0",
+    "pydantic-settings>=2.2.0",
+    "numpy>=1.26.0",
+    "pillow>=10.2.0",
+    "scikit-image>=0.22.0",
+    "structlog>=24.1.0"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]

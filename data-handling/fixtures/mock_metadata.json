@@ -1,0 +1,65 @@
+[
+  {
+    "tile_id": "paris_0001_0001_sentinel-2",
+    "location_id": "paris",
+    "sensor": "sentinel-2",
+    "date": "2018-03-10",
+    "width": 256,
+    "height": 256,
+    "channels": 3,
+    "crs": "EPSG:4326",
+    "geo_bbox": {
+      "west": 2.29,
+      "south": 48.85,
+      "east": 2.31,
+      "north": 48.87
+    },
+    "additional_metadata": {
+      "city_name": "Paris",
+      "country": "France",
+      "provenance": "Synthetic Fixture v0.1"
+    }
+  },
+  {
+    "tile_id": "paris_0001_0001_sentinel-2",
+    "location_id": "paris",
+    "sensor": "sentinel-2",
+    "date": "2020-06-15",
+    "width": 256,
+    "height": 256,
+    "channels": 3,
+    "crs": "EPSG:4326",
+    "geo_bbox": {
+      "west": 2.29,
+      "south": 48.85,
+      "east": 2.31,
+      "north": 48.87
+    },
+    "additional_metadata": {
+      "city_name": "Paris",
+      "country": "France",
+      "provenance": "Synthetic Fixture v0.1"
+    }
+  },
+  {
+    "tile_id": "berlin_0001_0001_sentinel-2",
+    "location_id": "berlin",
+    "sensor": "sentinel-2",
+    "date": "2019-05-20",
+    "width": 256,
+    "height": 256,
+    "channels": 3,
+    "crs": "EPSG:4326",
+    "geo_bbox": {
+      "west": 13.38,
+      "south": 52.51,
+      "east": 13.41,
+      "north": 52.53
+    },
+    "additional_metadata": {
+      "city_name": "Berlin",
+      "country": "Germany",
+      "provenance": "Synthetic Fixture v0.1"
+    }
+  }
+]

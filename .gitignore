@@ -1,0 +1,41 @@
+# Python / Virtualenv
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Node / Vite / React
+node_modules/
+frontend/dist/
+frontend/dist-ssr/
+*.local
+.npm
+
+# Data & Models (never commit large binary assets or secrets)
+/data/*
+!/data/.gitkeep
+/models/*
+!/models/.gitkeep
+*.h5
+*.index
+*.sqlite
+*.db
+*.tif
+*.tiff
+
+# Environment & IDE
+.env
+.env.local
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

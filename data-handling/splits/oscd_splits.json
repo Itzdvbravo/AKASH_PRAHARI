@@ -1,0 +1,33 @@
+{
+  "description": "Standard geographic splits for OSCD dataset (14 train / 5 val / 5 test)",
+  "train": [
+    "aguasclaras",
+    "berlin",
+    "brasilia",
+    "canberra",
+    "chongqing",
+    "dubai",
+    "hongkong",
+    "lasvegas",
+    "milano",
+    "norrkoping",
+    "paris",
+    "rennes",
+    "sao-paulo",
+    "shanghai"
+  ],
+  "val": [
+    "abudhabi",
+    "beihai",
+    "bordeaux",
+    "madrid",
+    "montpellier"
+  ],
+  "test": [
+    "beirut",
+    "cambridge",
+    "cuiaba",
+    "dhanbad",
+    "rio"
+  ]
+}

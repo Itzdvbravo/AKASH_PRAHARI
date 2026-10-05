@@ -12,7 +12,7 @@ class AnalystSummary(BaseModel):
     earliest_detectable_change: Optional[str] = None
     confidence: Confidence
     changed_pixel_fraction: float
-    source_provenance: str = "Sentinel-2 / OSCD"
+    source_provenance: str = "Planet / DynamicEarthNet"
     detector: str = "pixel_diff"
 
 
@@ -29,10 +29,37 @@ class ChangeDetectionRequest(BaseModel):
     )
 
 
+class DetectionEvaluation(BaseModel):
+    precision: float
+    recall: float
+    f1: float
+    iou: float
+    pixel_accuracy: float
+    specificity: float
+    balanced_accuracy: float
+    predicted_changed_pixels: int
+    expected_changed_pixels: int
+    pixel_count: int
+    source: str
+
+
+class SemanticTransition(BaseModel):
+    from_class: str
+    to_class: str
+    pixel_count: int
+    area_fraction: float
+    model_score: float
+    color: str
+    bounding_boxes: List[BoundingBox] = Field(default_factory=list)
+
+
 class ChangeDetectionResponse(BaseModel):
     job_id: str
     status: str = "completed"
     mask_url: str
+    semantic_mask_url: Optional[str] = None
+    semantic_transitions: List[SemanticTransition] = Field(default_factory=list)
     bounding_boxes: List[BoundingBox]
     summary: AnalystSummary
+    evaluation: Optional[DetectionEvaluation] = None
     processing_ms: int

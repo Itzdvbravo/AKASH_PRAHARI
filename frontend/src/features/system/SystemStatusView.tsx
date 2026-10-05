@@ -75,12 +75,12 @@ export const SystemStatusView: React.FC = () => {
             <span className="badge badge-emerald">Ready</span>
           </div>
           <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-            {health.embedding_model === 'mock' ? 'Synthetic prototype catalog' : 'OSCD Sentinel-2 train split'}
+            {health.embedding_model === 'mock' ? 'Synthetic prototype catalog' : 'DynamicEarthNet PlanetFusion archive'}
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
             {health.embedding_model === 'mock'
               ? 'Demo scenes and dates for prototype mode'
-              : '14 train cities indexed; 10 held-out test cities excluded'}
+              : 'Monthly imagery and seven-class land-cover reference annotations'}
           </div>
         </div>
       </div>

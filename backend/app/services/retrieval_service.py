@@ -140,7 +140,9 @@ class RetrievalService:
             )
 
             sensor_enum = SensorType.SENTINEL_2
-            if "sentinel-1" in sensor_str:
+            if "planet" in sensor_str:
+                sensor_enum = SensorType.PLANET
+            elif "sentinel-1" in sensor_str:
                 sensor_enum = SensorType.SENTINEL_1
             elif "landsat" in sensor_str:
                 sensor_enum = SensorType.LANDSAT

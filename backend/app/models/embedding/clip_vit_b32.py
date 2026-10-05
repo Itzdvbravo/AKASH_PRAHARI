@@ -51,6 +51,33 @@ class CLIPViTB32EmbeddingModel(EmbeddingModel):
             raise ValueError(f"Unexpected CLIP embedding shape: {result.shape}")
         return result
 
+    def encode_images(self, images: list[np.ndarray]) -> np.ndarray:
+        """Encode a batch of RGB images with one model forward pass."""
+        from PIL import Image
+
+        if not images:
+            return np.empty((0, self._dim), dtype=np.float32)
+        tensors = []
+        for image in images:
+            pixels = np.asarray(image)
+            if pixels.ndim == 2:
+                pixels = np.repeat(pixels[..., None], 3, axis=-1)
+            if pixels.ndim != 3 or pixels.shape[-1] < 3:
+                raise ValueError("CLIP image input must have shape (height, width, >=3)")
+            pixels = np.nan_to_num(pixels[..., :3], nan=0.0, posinf=1.0, neginf=0.0)
+            if np.issubdtype(pixels.dtype, np.integer) and pixels.max(initial=0) > 255:
+                upper = np.percentile(pixels, 98, axis=(0, 1), keepdims=True)
+                pixels = pixels.astype(np.float32) / np.maximum(upper, 1.0) * 255.0
+            elif pixels.max(initial=0) <= 1.0:
+                pixels = pixels.astype(np.float32) * 255.0
+            pil_image = Image.fromarray(np.clip(pixels, 0, 255).astype(np.uint8), mode="RGB")
+            tensors.append(self.preprocess(pil_image))
+        batch = self._torch.stack(tensors).to(self._device)
+        with self._torch.inference_mode():
+            features = self.model.encode_image(batch)
+            features = features / features.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+        return features.detach().float().cpu().numpy().astype(np.float32)
+
     def encode_text(self, text: str) -> np.ndarray:
         tokens = self.tokenizer([text]).to(self._device)
         with self._torch.inference_mode():

@@ -144,13 +144,22 @@ class SelectiveTemporalSSM(nn.Module):
 
 
 class MambaTemporalChangeNet(nn.Module):
-    """Spatial selective scans, temporal SSM, and a binary change decoder."""
+    """Spatial/temporal selective scans with binary or class-transition decoder."""
 
-    def __init__(self, in_channels: int = 3, feature_dim: int = 32, state_dim: int = 8):
+    def __init__(
+        self,
+        in_channels: int = 3,
+        feature_dim: int = 32,
+        state_dim: int = 8,
+        transition_classes: int = 0,
+        semantic_classes: int = 7,
+    ):
         super().__init__()
         self.in_channels = in_channels
         self.feature_dim = feature_dim
         self.state_dim = state_dim
+        self.transition_classes = int(transition_classes)
+        self.semantic_classes = int(semantic_classes)
         self.spatial_encoder = nn.Sequential(
             nn.Conv2d(in_channels, 32, kernel_size=5, stride=2, padding=2, bias=False),
             nn.GroupNorm(8, 32),
@@ -172,7 +181,11 @@ class MambaTemporalChangeNet(nn.Module):
             nn.Conv2d(feature_dim * 2, feature_dim, kernel_size=3, padding=1, bias=False),
             nn.GroupNorm(8, feature_dim),
             nn.SiLU(),
-            nn.Conv2d(feature_dim, 1, kernel_size=1),
+            nn.Conv2d(
+                feature_dim,
+                1 + 2 * self.semantic_classes if self.transition_classes else 1,
+                kernel_size=1,
+            ),
         )
 
     def _bidirectional_scan(self, sequence: Tensor) -> Tensor:
@@ -197,7 +210,7 @@ class MambaTemporalChangeNet(nn.Module):
         list[Tensor],
         list[Tensor],
     ]:
-        """Predict a binary change mask from T co-registered dates.
+        """Predict binary change or ordered class transitions from T aligned dates.
 
         `previous_*` plus `initial_state` let incremental inference continue from
         a persisted temporal state and classify the newest date against the last

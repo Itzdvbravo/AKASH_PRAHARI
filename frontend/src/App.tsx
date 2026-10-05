@@ -134,7 +134,7 @@ export default function App() {
                 <h2 className="section-title">Retrieved Satellite Scenes</h2>
                 {embeddingModel === 'clip_vit_b32' && indexedTileCount !== null && (
                   <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-                    Searching {indexedTileCount} indexed tiles from the OSCD training split; held-out test cities are excluded.
+                    Searching {indexedTileCount} indexed DynamicEarthNet training tiles; held-out areas are excluded.
                   </p>
                 )}
                 {activeQuery && (

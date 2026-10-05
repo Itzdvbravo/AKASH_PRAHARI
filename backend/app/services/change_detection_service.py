@@ -2,7 +2,9 @@
 import time
 import uuid
 import json
+import colorsys
 from typing import Optional
+import numpy as np
 from app.models.interfaces import ChangeDetector
 from app.services.image_service import ImageService
 from app.services.comparison_service import ComparisonService
@@ -10,10 +12,21 @@ from app.services.summary_service import SummaryService
 from app.postprocessing.mask_refinement import refine_change_mask
 from app.postprocessing.bbox_extraction import extract_bounding_boxes
 from app.postprocessing.confidence import compute_confidence
-from app.schemas.change_detection import ChangeDetectionRequest, ChangeDetectionResponse
+from app.schemas.change_detection import (
+    ChangeDetectionRequest,
+    ChangeDetectionResponse,
+    DetectionEvaluation,
+    SemanticTransition,
+)
 from app.exceptions import invalid_query_exception
 from app.services.temporal_state_store import TemporalStateStore
 from app.services.review_service import ReviewService
+
+
+LAND_COVER_CLASSES = (
+    "impervious surface", "agriculture", "forest and other vegetation",
+    "wetlands", "bare soil", "water", "snow and ice",
+)
 
 
 class ChangeDetectionService:
@@ -82,14 +95,19 @@ class ChangeDetectionService:
                         "temporal_dates must start at date_before and end at date_after."
                     )
             else:
-                sequence_dates = [
-                    date for date in tile_dates if date_before <= date <= date_after
-                ]
-                if date_before not in sequence_dates:
-                    sequence_dates.insert(0, date_before)
-                if date_after not in sequence_dates:
-                    sequence_dates.append(date_after)
-                sequence_dates = sorted(set(sequence_dates))
+                if getattr(self.change_detector, "transition_classes", 0):
+                    # The semantic head is trained on labeled date pairs; use
+                    # the requested pair and continue any saved state between them.
+                    sequence_dates = sorted(set((date_before, date_after)))
+                else:
+                    sequence_dates = [
+                        date for date in tile_dates if date_before <= date <= date_after
+                    ]
+                    if date_before not in sequence_dates:
+                        sequence_dates.insert(0, date_before)
+                    if date_after not in sequence_dates:
+                        sequence_dates.append(date_after)
+                    sequence_dates = sorted(set(sequence_dates))
 
             initial_context = None
             context_date = sequence_dates[0]
@@ -141,12 +159,53 @@ class ChangeDetectionService:
             min_area_px=self.min_change_area_px,
             base_confidence=raw_output.confidence_score
         )
+        evaluation = self.image_service.evaluate_change_mask(
+            tile_id, location_id, date_before, date_after, refined_mask
+        )
+
+        job_id = str(uuid.uuid4())
+        semantic_mask = (raw_output.metadata or {}).get("semantic_mask")
+        semantic_confidence = (raw_output.metadata or {}).get("semantic_confidence")
+        semantic_transitions: list[SemanticTransition] = []
+        semantic_mask_url = None
+        if semantic_mask is not None:
+            semantic_mask = np.asarray(semantic_mask, dtype=np.uint8).copy()
+            if semantic_mask.shape == refined_mask.shape:
+                semantic_mask[refined_mask == 0] = 0
+                counts = np.bincount(semantic_mask.ravel(), minlength=50)
+                confidence_map = (
+                    np.asarray(semantic_confidence, dtype=np.float32)
+                    if semantic_confidence is not None
+                    else np.full(semantic_mask.shape, raw_output.confidence_score, dtype=np.float32)
+                )
+                total_pixels = max(int(semantic_mask.size), 1)
+                for encoded_id in np.flatnonzero(counts[1:]) + 1:
+                    transition_pixels = semantic_mask == encoded_id
+                    class_pair = int(encoded_id) - 1
+                    semantic_transitions.append(SemanticTransition(
+                        from_class=LAND_COVER_CLASSES[class_pair // 7],
+                        to_class=LAND_COVER_CLASSES[class_pair % 7],
+                        pixel_count=int(counts[encoded_id]),
+                        area_fraction=float(counts[encoded_id] / total_pixels),
+                        model_score=float(np.mean(confidence_map[transition_pixels])),
+                        color="#{:02x}{:02x}{:02x}".format(*(
+                            np.round(np.asarray(colorsys.hsv_to_rgb(
+                                (class_pair * 0.61803398875) % 1.0, 0.82, 1.0
+                            )) * 255).astype(np.uint8).tolist()
+                        )),
+                        bounding_boxes=extract_bounding_boxes(
+                            transition_pixels.astype(np.uint8),
+                            min_area_px=self.min_change_area_px,
+                            base_confidence=float(np.mean(confidence_map[transition_pixels])),
+                        ),
+                    ))
+                semantic_transitions.sort(key=lambda item: item.pixel_count, reverse=True)
+                semantic_filename = self.image_service.save_semantic_mask_bytes(job_id, semantic_mask)
+                semantic_mask_url = f"/api/v1/masks/{semantic_filename}"
 
         # 5. Save mask PNG file
-        job_id = str(uuid.uuid4())
         mask_filename = self.image_service.save_mask_bytes(job_id, refined_mask)
         mask_url = f"/api/v1/masks/{mask_filename}"
-
         # 6. Build Analyst Summary
         summary = self.summary_service.build_summary(
             location_id=location_id,
@@ -162,8 +221,11 @@ class ChangeDetectionService:
             job_id=job_id,
             status="completed",
             mask_url=mask_url,
+            semantic_mask_url=semantic_mask_url,
+            semantic_transitions=semantic_transitions,
             bounding_boxes=boxes,
             summary=summary,
+            evaluation=DetectionEvaluation(**evaluation) if evaluation else None,
             processing_ms=max(processing_ms, 1)
         )
         if self.review_service:

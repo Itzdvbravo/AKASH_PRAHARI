@@ -73,7 +73,7 @@ Core requirements confirmed from the reference image:
 ## 2. Explicit Assumptions, Ambiguities, and Questions Requiring Clarification
 
 ### 2.1 Confirmed Assumptions
-- OSCD is the initial dataset. Its directory structure, bands, and metadata must be verified once downloaded.
+- DynamicEarthNet-video is the active dataset for retrieval and change detection. OSCD results remain historical experiments and are not used by the active detector.
 - The Mamba architecture referenced in the image diagrams is the **Selective State Space Model (SSM)** (Gu & Dao, 2023). PyPI package: `mamba-ssm`.
 - "Vector Database" = embedding index for image-level global embeddings (candidate: FAISS or ChromaDB, offline).
 - "Spatio Database" = per-tile spatial feature store (last processed image tile per location).
@@ -110,9 +110,9 @@ permanent deployment or Phase C architecture approvals.
 | Q4 Analyst feedback | Out of prototype scope; no feedback controls or persistence are implemented. Revisit if feedback collection is prioritized later. |
 | Q5 Bounding boxes | Connected components are extracted from the change mask; without scikit-image, one extent box is returned. No object detector is used. |
 | Q6 Users | Single-user local operation; authentication, user isolation, and concurrency guarantees are not included. |
-| Q7 Tile size | Use 256×256 tiles for the current prototype and OSCD index. Changing size requires coordinated re-indexing and evaluation. |
+| Q7 Tile size | Use 256×256 tiles for the current DynamicEarthNet index. Changing size requires coordinated re-indexing and evaluation. |
 | Q8 Offline setup | Download weights as an explicit setup step. Runtime uses local weights; the UI has no external font dependency, and the browser walkthrough observed no external requests. |
-| Q9 Sensors | Dataset mode uses Sentinel-2 OSCD RGB composites. Other sensor values in schemas do not imply dataset ingestion support. |
+| Q9 Sensors | Dataset mode uses DynamicEarthNet PlanetFusion RGB. Other sensor values in schemas do not imply dataset ingestion support. |
 | Q10 Confidence | Retrieval scores are cosine similarity; change and box scores are heuristics. All remain marked uncalibrated and are not probabilities. |
 
 ### 2.4 Items That Must Be Verified When OSCD Becomes Available
@@ -939,9 +939,10 @@ The reference architecture shows four Mamba-based modules:
 | Change Detector | Detect if change occurred | Dense embeddings + temporal states | Binary decision + rough mask |
 | Semantic Change Detection | Classify type and extent of change | Dense embeddings + change signal | Semantic change mask |
 
-This is a **Phase C** architecture. It requires:
-- Mamba SSM implementation (`mamba-ssm` package, CUDA required for practical training).
-- Training on OSCD or similar dataset with temporal pairs.
+This is a **Phase C** architecture. For the active DynamicEarthNet dataset it uses:
+- The repository's CPU-capable selective temporal SSM implementation; CUDA is preferred for full-area training.
+- PlanetFusion RGB image pairs and the dataset's seven monthly land-cover classes.
+- A binary change head plus two seven-class land-cover heads. The ordered transition map is derived from the two predicted class maps and gated by the binary output.
 - Temporal state persistence across inference calls (HDF5 store).
 - State update logic: temporal state must be updated after every Change Detector run, even if no change is detected (per the reference diagram note).
 
@@ -950,7 +951,7 @@ This is a **Phase C** architecture. It requires:
 
 **Decision:** Custom Mamba architecture design (dimensions, depth, state size) and training strategy.
 
-**Stop condition:** Present proposed architecture, training data requirements, and compute estimate. Await approval before beginning any training code or Mamba integration.
+**Decision and authorization:** On 2026-10-05 the user requested implementation of semantic change detection and Phase C using DynamicEarthNet. This authorizes proceeding with the dataset-adapted design above. The local environment has CPU-only PyTorch; full AOI training and final model activation depend on validation quality and available compute.
 
 ---
 
@@ -1617,9 +1618,9 @@ the current active environment.
 
 ---
 
-### Stage 4: Phase C — Mamba Architecture (~open-ended, requires GPU and CP-3 approval)
+### Stage 4: Phase C — DynamicEarthNet Mamba Semantic Change Detection
 
-Steps deferred to post-Phase B planning session. Requires CP-3 approval on architecture, training strategy, and compute budget.
+Implementation is underway. The service supports model-predicted land-cover transition masks, transition summaries, and persisted temporal state. `scripts/train_dynamicearthnet_semantic_cd.py` trains from DynamicEarthNet monthly labels with AOI-level train/validation separation. A CPU-only pilot on ten training AOIs and one held-out AOI completed, but validation quality was poor; the semantic model is therefore opt-in and the existing pixel-difference detector remains the default. Results and limits are in `docs/evaluation/dynamicearthnet_semantic_cd.md`. Full Phase C acceptance remains open pending broader training, independent evaluation, and false-alarm improvement.
 
 ---
 
@@ -1740,10 +1741,10 @@ When any of the following change, re-run the full test suite plus evaluation:
 - [ ] User approval received.
 
 ### Phase C Complete When:
-- [ ] CP-3 approval obtained; Mamba architecture finalized and justified.
-- [ ] Mamba models trained and validated on OSCD.
+- [x] User authorization obtained; DynamicEarthNet Mamba architecture and training objective documented.
+- [ ] Mamba semantic model trained and validated across a representative DynamicEarthNet AOI split.
 - [ ] Temporal state persistence tested across multiple ingestion runs.
-- [ ] Semantic change detection classifies at least 3 change types correctly.
+- [ ] Semantic change detection classifies at least 3 transitions correctly on held-out AOIs.
 - [ ] False-alarm suppression reduces false positive rate vs. Phase B baseline (documented metric).
 - [ ] End-to-end offline operation verified (no network calls after model weights are on disk).
 - [ ] User approval received.

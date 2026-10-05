@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ComparisonResponse, ChangeDetectionResponse, GeoBBox } from '../../types/api.types';
 import { LOCATIONS } from '../../mock/mockData';
 import { resolveApiUrl } from '../../api/client';
@@ -21,7 +21,9 @@ export const ComparisonViewer: React.FC<ComparisonViewerProps> = ({
   const [sliderMode, setSliderMode] = useState(false);
   const [sliderPos, setSliderPos] = useState(50);
   const [selectedZone, setSelectedZone] = useState<number | null>(null);
+  const [selectedSemanticBox, setSelectedSemanticBox] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [zooms, setZooms] = useState([{ scale: 1, x: 50, y: 50 }, { scale: 1, x: 50, y: 50 }, { scale: 1, x: 50, y: 50 }]);
+  const maskedViewportRef = useRef<HTMLDivElement>(null);
 
   const updateZoom = (index: number, scale: number, x?: number, y?: number) => {
     setZooms(current => current.map((zoom, i) => i === index
@@ -55,6 +57,18 @@ export const ComparisonViewer: React.FC<ComparisonViewerProps> = ({
     transformOrigin: `${zooms[index].x}% ${zooms[index].y}%`,
     transition: 'transform 180ms ease-out',
   });
+
+  const focusDetectedZone = (index: number, box: { x: number; y: number; width: number; height: number }) => {
+    setSelectedZone(index);
+    setSelectedSemanticBox(null);
+    updateZoom(2, 3, ((box.x + box.width / 2) / 256) * 100, ((box.y + box.height / 2) / 256) * 100);
+    maskedViewportRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  useEffect(() => {
+    setSelectedZone(null);
+    setSelectedSemanticBox(null);
+  }, [changeDetection]);
 
   const before = comparison.before;
   const after = comparison.after;
@@ -98,10 +112,10 @@ export const ComparisonViewer: React.FC<ComparisonViewerProps> = ({
         changed_ground_area_km2: null,
         changed_pixel_fraction: changeDetection?.summary.changed_pixel_fraction ?? null,
         detector: changeDetection?.summary.detector ?? null,
-        source: changeDetection?.summary.source_provenance ?? 'OSCD imagery archive',
+        source: changeDetection?.summary.source_provenance ?? 'DynamicEarthNet PlanetFusion archive',
         display_asset: 'Rendered 3-band RGB PNG preview',
-        source_rasters: 'Rectified Sentinel-2 GeoTIFFs: B01–B12 and B8A; common 10 m grid',
-        geotiff_georeferencing: 'Local OSCD TIFFs lack verified CRS and affine transform tags; pixel coordinates cannot be converted to ground locations',
+        source_rasters: 'DynamicEarthNet PlanetFusion RGB composites and monthly categorical land-cover labels',
+        geotiff_georeferencing: 'DynamicEarthNet STAC projection metadata; 3 m GSD',
         exported_geometry_note: 'Approximate indexed city bounding box, not a precise tile footprint',
       },
       geometry: {
@@ -118,7 +132,16 @@ export const ComparisonViewer: React.FC<ComparisonViewerProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  const detectorZones = (changeDetection?.bounding_boxes ?? []).map(box => ({
+    x: box.x, y: box.y, width: box.width, height: box.height,
+    label: box.label.replace(/_/g, ' '),
+    confidence: box.confidence.score,
+  }));
+  const displayZones = detectorZones;
   const maskUrl = changeDetection ? `${resolveApiUrl(changeDetection.mask_url)}?overlay=true` : undefined;
+  const semanticMaskUrl = changeDetection?.semantic_mask_url
+    ? `${resolveApiUrl(changeDetection.semantic_mask_url)}?semantic_overlay=true`
+    : undefined;
   const beforeImageUrl = before.image_url.startsWith('/api/') ? resolveApiUrl(before.image_url) : before.image_url;
   const afterImageUrl = after.image_url.startsWith('/api/') ? resolveApiUrl(after.image_url) : after.image_url;
 
@@ -264,28 +287,71 @@ export const ComparisonViewer: React.FC<ComparisonViewerProps> = ({
                 {after.tile_ref.date}
               </span>
             </div>
-            <div className="tile-viewport">
+            <div className="tile-viewport" ref={maskedViewportRef}>
               {changeDetection ? (
                 <>
                   <img src={afterImageUrl} alt="Post-event satellite image" className="tile-image" style={zoomedImageStyle(2)} />
                   <img
                     src={maskUrl}
-                    alt="Detected change mask over the post-event image"
+                    alt="Image detector predicted binary change mask"
                     className="mask-overlay"
-                    style={{ opacity: 1, ...zoomedImageStyle(2) }}
+                    style={{ opacity: semanticMaskUrl ? 0.28 : 1, ...zoomedImageStyle(2) }}
                   />
-                  {selectedZone !== null && changeDetection.bounding_boxes[selectedZone] && (
+                  {semanticMaskUrl && (
+                    <img
+                      src={semanticMaskUrl}
+                      alt="Model-predicted land-cover transition overlay"
+                      className="mask-overlay"
+                      style={{ opacity: 1, ...zoomedImageStyle(2) }}
+                    />
+                  )}
+                  {selectedZone !== null && displayZones[selectedZone] && (
                     <svg className="selected-zone-overlay" viewBox="0 0 256 256" preserveAspectRatio="none" style={zoomedImageStyle(2)} aria-hidden="true">
                       <rect
-                        x={changeDetection.bounding_boxes[selectedZone].x}
-                        y={changeDetection.bounding_boxes[selectedZone].y}
-                        width={changeDetection.bounding_boxes[selectedZone].width}
-                        height={changeDetection.bounding_boxes[selectedZone].height}
+                        x={displayZones[selectedZone].x}
+                        y={displayZones[selectedZone].y}
+                        width={displayZones[selectedZone].width}
+                        height={displayZones[selectedZone].height}
                         rx="2"
                         className="selected-zone-mark"
                       />
                     </svg>
                   )}
+                  {selectedSemanticBox && (
+                    <svg className="selected-zone-overlay" viewBox="0 0 256 256" preserveAspectRatio="none" style={zoomedImageStyle(2)} aria-hidden="true">
+                      <rect
+                        x={selectedSemanticBox.x}
+                        y={selectedSemanticBox.y}
+                        width={selectedSemanticBox.width}
+                        height={selectedSemanticBox.height}
+                        rx="2"
+                        className="selected-zone-mark"
+                      />
+                    </svg>
+                  )}
+                  <svg className="detected-zone-hit-overlay" viewBox="0 0 256 256" preserveAspectRatio="none" style={zoomedImageStyle(2)} aria-label="Model-predicted regions; select a region to zoom">
+                    {displayZones.map((box, index) => (
+                      <rect
+                        key={`zone-hit-${index}`}
+                        x={box.x}
+                        y={box.y}
+                        width={box.width}
+                        height={box.height}
+                        fill="rgba(0,0,0,0)"
+                        className="detected-zone-hit-target"
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Zoom to ${box.label} region ${index + 1}`}
+                        onClick={() => focusDetectedZone(index, box)}
+                        onKeyDown={event => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            focusDetectedZone(index, box);
+                          }
+                        }}
+                      />
+                    ))}
+                  </svg>
                 </>
               ) : (
                 <div className="mask-placeholder">Run change detection to view the mask.</div>
@@ -293,7 +359,9 @@ export const ComparisonViewer: React.FC<ComparisonViewerProps> = ({
               <ZoomControls scale={zooms[2].scale} onChange={scale => updateZoom(2, scale)} onReset={() => updateZoom(2, 1, 50, 50)} />
             </div>
             <div style={{ padding: '0.65rem 1rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Red overlay marks pixels flagged as changed
+              {semanticMaskUrl
+                ? 'Colored pixels show predicted land-cover transitions; the faint red overlay shows all predicted binary changes.'
+                : 'Red overlay marks pixels predicted as changed by the image detector.'}
             </div>
           </div>
         </div>
@@ -301,22 +369,54 @@ export const ComparisonViewer: React.FC<ComparisonViewerProps> = ({
 
       {!sliderMode && changeDetection && (
         <div className="detection-notes" aria-label="Detected changes">
-          <h3 className="section-title">Detected urban change regions</h3>
-          {changeDetection.bounding_boxes.length > 0 ? (
+          <h3 className="section-title detected-regions-heading">Model-predicted change regions</h3>
+          {displayZones.length > 0 ? (
             <ul>
-              {changeDetection.bounding_boxes.map((box, idx) => (
-                <li key={`${box.label}-${idx}`} className={selectedZone === idx ? 'selected-detected-zone' : ''}>
-                  <button type="button" className="detected-zone-button" aria-pressed={selectedZone === idx} onClick={() => {
-                    setSelectedZone(idx);
-                    updateZoom(2, 3, ((box.x + box.width / 2) / 256) * 100, ((box.y + box.height / 2) / 256) * 100);
-                  }}>
-                  {box.label.replace(/_/g, ' ')} detected at pixel ({box.x}, {box.y}), spanning {box.width} × {box.height} px — {Math.round(box.confidence.score * 100)}% confidence
+              {displayZones.map((zone, idx) => (
+                <li key={`${zone.label}-${idx}`} className={selectedZone === idx ? 'selected-detected-zone' : ''}>
+                  <button type="button" className="detected-zone-button" aria-pressed={selectedZone === idx} onClick={() => focusDetectedZone(idx, zone)}>
+                    <strong>{zone.label}</strong> at ({zone.x}, {zone.y}), {zone.width} × {zone.height} px
+                    {zone.confidence !== undefined && (
+                      <span className="region-confidence-label"> · {Math.round(zone.confidence * 100)}% model confidence</span>
+                    )}
                   </button>
                 </li>
               ))}
             </ul>
           ) : (
-            <p>No individual change regions were detected.</p>
+            <p>No individual regions were predicted by the image detector.</p>
+          )}
+          {changeDetection.semantic_mask_url && (
+            <div className="semantic-transition-results" aria-label="Model-predicted semantic transitions">
+              <h3 className="section-title">Predicted land-cover transitions</h3>
+              {(changeDetection.semantic_transitions ?? []).length ? (
+                <ul>
+                  {(changeDetection.semantic_transitions ?? []).map((transition, index) => (
+                  <li key={`${transition.from_class}-${transition.to_class}-${index}`}>
+                    <button
+                      type="button"
+                      className="semantic-transition-button"
+                      disabled={!transition.bounding_boxes?.length}
+                      onClick={() => {
+                        const box = transition.bounding_boxes?.[0];
+                        if (!box) return;
+                        setSelectedZone(null);
+                        setSelectedSemanticBox(box);
+                        updateZoom(2, 3, ((box.x + box.width / 2) / 256) * 100, ((box.y + box.height / 2) / 256) * 100);
+                        maskedViewportRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      }}
+                    >
+                      <span className="semantic-transition-swatch" style={{ backgroundColor: transition.color }} aria-hidden="true" />
+                      <strong>{transition.from_class} → {transition.to_class}</strong>
+                      <span>{transition.pixel_count.toLocaleString()} px · {(transition.area_fraction * 100).toFixed(2)}% of tile</span>
+                    </button>
+                  </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>No changed land-cover transitions were predicted.</p>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -334,10 +434,10 @@ export const ComparisonViewer: React.FC<ComparisonViewerProps> = ({
           <div><span>Approximate city bounds (W / S / E / N)</span><strong>{geoBBox && hasGeoBBox ? `${geoBBox.west.toFixed(5)}, ${geoBBox.south.toFixed(5)}, ${geoBBox.east.toFixed(5)}, ${geoBBox.north.toFixed(5)}` : 'Not provided'}</strong></div>
           <div><span>Bounds coordinate reference</span><strong>{hasGeoBBox ? 'WGS 84 longitude / latitude (EPSG:4326)' : 'Unavailable'}</strong></div>
           <div><span>Acquisitions · co-registration</span><strong>{before.tile_ref.date} → {after.tile_ref.date} · {comparison.coregistered ? 'aligned' : 'not confirmed'}</strong></div>
-          <div><span>Source GeoTIFFs</span><strong>OSCD Sentinel-2: 13 bands (B01–B12, B8A); rectified common 10 m grid</strong></div>
-          <div><span>Displayed image / tile</span><strong>3-band RGB PNG preview · 256 × 256 px</strong></div>
-          <div><span>GeoTIFF georeferencing</span><strong>CRS and affine transform tags are absent in the local OSCD rasters; pixel-to-ground coordinates are unverified</strong></div>
-          <div><span>Other raster tags</span><strong>Per-file dimensions, NoData and compression are not shown by this API</strong></div>
+          <div><span>Dataset</span><strong>DynamicEarthNet-video · PlanetFusion</strong></div>
+          <div><span>Displayed image / tile</span><strong>3-band RGB preview · 256 × 256 px · 3 m GSD</strong></div>
+          <div><span>Georeferencing</span><strong>Dataset STAC CRS and affine transform</strong></div>
+          <div><span>Change model output</span><strong>{changeDetection?.semantic_mask_url ? '49-class DynamicEarthNet semantic transitions' : 'Binary mask · semantic model not active'}</strong></div>
         </div>
         <div className="comparison-analyst-actions">
           <div className="comparison-area-metric">

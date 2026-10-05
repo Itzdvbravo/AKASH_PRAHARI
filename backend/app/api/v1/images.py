@@ -1,5 +1,6 @@
 """Image streaming and dates discovery endpoints."""
 from fastapi import APIRouter, Request, Response, Query
+from starlette.concurrency import run_in_threadpool
 from app.schemas.images import DatesResponse
 from app.schemas.common import SensorType
 
@@ -13,7 +14,7 @@ async def get_location_dates(location_id: str, request: Request):
     return DatesResponse(
         location_id=location_id,
         dates=dates,
-        sensor=SensorType.SENTINEL_2
+        sensor=SensorType.PLANET
     )
 
 
@@ -24,7 +25,7 @@ async def get_tile_thumbnail(
     request: Request
 ):
     image_service = request.app.state.image_service
-    img_bytes = image_service.get_tile_bytes(tile_id, date, fmt="png", thumbnail=True)
+    img_bytes = await run_in_threadpool(image_service.get_tile_bytes, tile_id, date, fmt="png", thumbnail=True)
     return Response(content=img_bytes, media_type="image/png")
 
 
@@ -37,16 +38,22 @@ async def get_tile_image(
     format: str = Query("png")
 ):
     image_service = request.app.state.image_service
-    img_bytes = image_service.get_tile_bytes(tile_id, date, fmt=format, thumbnail=False)
+    img_bytes = await run_in_threadpool(image_service.get_tile_bytes, tile_id, date, fmt=format, thumbnail=False)
     media_type = "image/png" if format.lower() == "png" else "image/jpeg"
     return Response(content=img_bytes, media_type=media_type)
 
 
 @router.get("/masks/{mask_filename}")
-async def get_mask_image(mask_filename: str, request: Request, overlay: bool = Query(False)):
+async def get_mask_image(
+    mask_filename: str,
+    request: Request,
+    overlay: bool = Query(False),
+    semantic_overlay: bool = Query(False),
+):
     image_service = request.app.state.image_service
-    mask_bytes = (
-        image_service.get_mask_overlay_bytes(mask_filename)
-        if overlay else image_service.get_mask_bytes(mask_filename)
-    )
+    if semantic_overlay:
+        mask_getter = image_service.get_semantic_overlay_bytes
+    else:
+        mask_getter = image_service.get_mask_overlay_bytes if overlay else image_service.get_mask_bytes
+    mask_bytes = await run_in_threadpool(mask_getter, mask_filename)
     return Response(content=mask_bytes, media_type="image/png")

@@ -12,7 +12,7 @@ from .mamba_model import MambaTemporalChangeNet
 
 
 class MambaChangeDetector(ChangeDetector):
-    """Run a trained temporal SSM checkpoint on a sequence of aligned images."""
+    """Run a trained binary or DynamicEarthNet semantic SSM checkpoint."""
 
     def __init__(
         self,
@@ -35,6 +35,7 @@ class MambaChangeDetector(ChangeDetector):
         checkpoint = torch.load(self.weights_path, map_location="cpu", weights_only=True)
         config = checkpoint.get("model_config", {})
         self.model = MambaTemporalChangeNet(**config)
+        self.transition_classes = int(getattr(self.model, "transition_classes", 0))
         self.model.load_state_dict(checkpoint["model_state_dict"], strict=True)
         self.model.to(self.device).eval()
         self.threshold = float(threshold if threshold is not None else checkpoint["threshold"])
@@ -87,9 +88,29 @@ class MambaChangeDetector(ChangeDetector):
                 return_context=True,
                 **model_args,
             )
-            probabilities = torch.sigmoid(logits)[0, 0].cpu().numpy()
+            if self.transition_classes:
+                binary_probabilities = torch.sigmoid(logits[:, :1])[0, 0].cpu().numpy()
+                class_count = int(self.model.semantic_classes)
+                before_probabilities = torch.softmax(logits[:, 1:1 + class_count], dim=1)[0]
+                after_probabilities = torch.softmax(logits[:, 1 + class_count:1 + 2 * class_count], dim=1)[0]
+                before_classes = torch.argmax(before_probabilities, dim=0).cpu().numpy()
+                after_classes = torch.argmax(after_probabilities, dim=0).cpu().numpy()
+                after_probabilities_np = after_probabilities.cpu().numpy()
+                row_index, col_index = np.indices(before_classes.shape)
+                predicted_transition = before_classes * class_count + after_classes
+                mask = (binary_probabilities >= self.threshold).astype(np.uint8)
+                semantic_changed = (before_classes != after_classes) & (mask > 0)
+                semantic_mask = np.where(semantic_changed, predicted_transition + 1, 0).astype(np.uint8)
+                probabilities = binary_probabilities
+                before_confidence = before_probabilities.max(dim=0).values.cpu().numpy()
+                after_confidence = after_probabilities_np[after_classes, row_index, col_index]
+                semantic_confidence = np.sqrt(before_confidence * after_confidence)
+            else:
+                probabilities = torch.sigmoid(logits)[0, 0].cpu().numpy()
+                mask = (probabilities >= self.threshold).astype(np.uint8)
+                semantic_mask = None
+                semantic_confidence = None
 
-        mask = (probabilities >= self.threshold).astype(np.uint8)
         changed_fraction = float(mask.mean())
         confidence = float(probabilities[mask > 0].mean()) if np.any(mask) else float(probabilities.max())
         contexts = [
@@ -107,11 +128,19 @@ class MambaChangeDetector(ChangeDetector):
             mask=mask,
             confidence_score=round(float(np.clip(confidence, 0.0, 1.0)), 4),
             changed_pixel_fraction=round(changed_fraction, 4),
-            detector_name="mamba_temporal_ssm",
+            detector_name=(
+                "mamba_temporal_ssm_dynamicearthnet_semantic"
+                if self.transition_classes else "mamba_temporal_ssm"
+            ),
             metadata={
                 "threshold": self.threshold,
                 "temporal_length": len(images) + (1 if initial_context else 0),
                 "temporal_contexts": contexts,
                 "device": str(self.device),
+                **({
+                    "semantic_mask": semantic_mask,
+                    "semantic_confidence": semantic_confidence,
+                    "binary_probability_map": probabilities,
+                } if semantic_mask is not None else {}),
             },
         )

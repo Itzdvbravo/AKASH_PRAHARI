@@ -1,32 +1,26 @@
 # Data Provenance and Licensing
 
-## Primary Target Dataset: OSCD (Onera Satellite Change Detection)
+## Primary Dataset: DynamicEarthNet-video
 
-- **Origin**: ONERA (The French Aerospace Lab).
-- **Authors**: Daudt, R. C., Le Saux, B., Boulch, A., & Gousseau, Y. (2018).
-- **Reference**: "Urban change detection for Multispectral Earth Observation using convolutional neural networks", IGARSS 2018.
-- **Sensor**: Sentinel-2 (Copernicus European Space Agency).
-- **Local copy**: Imagery is in `images/`; official train/test label archives are extracted under ignored `data/oscd_labels/`. The imagery README states that it contains modified Copernicus data from 2015-2018. Change labels are **CC BY-NC-SA**; preserve attribution and non-commercial/share-alike terms.
-- **Bands**: 13 bands (B01-B12 plus B8A) across visible, red-edge, NIR, and SWIR.
-- **Ground Truth**: Binary pixel masks marking urban changes between 2015 and 2018. Official train/test archive MD5 hashes match published OSCD/TorchGeo checksums; masks are not committed to git.
-- **Cities and split**: 24 scenes. The local archive's `train.txt` and `test.txt` define 14 training and 10 test cities; there is no separate validation split in those files.
-- **Schema record**: See [`data-handling/adapters/oscd/oscd_schema.md`](../data-handling/adapters/oscd/oscd_schema.md) for verified directory layout, dates, labels, and georeferencing limits.
+- **Source**: [DynamicEarthNet paper](https://openaccess.thecvf.com/content/CVPR2022/papers/Toker_DynamicEarthNet_Daily_Multi-Spectral_Satellite_Dataset_for_Semantic_Change_Segmentation_CVPR_2022_paper.pdf) and its [71 dB TACO video distribution](https://huggingface.co/datasets/isp-uv-es/DynamicEarthNet-video).
+- **Local copy**: `data/dynamicearthnet/dynamicearthnet-video-71psnr.tacozip`; the compressed archive is ignored by git. The compact distribution contains 75 AOIs, daily PlanetFusion RGB imagery, and monthly label frames.
+- **Resolution and metadata**: 1024 × 1024 AOIs at approximately 3 m GSD. The app reads each AOI's STAC CRS and affine transform for indexed tile bounds.
+- **Semantic labels**: Monthly pixel labels use class IDs 0–6: impervious surface, agriculture, forest and other vegetation, wetlands, bare soil, water, and snow/ice. They are used as expected outputs for binary change-mask evaluation only. They are not rendered as detections or used to construct the detector mask. The configured pixel-difference detector has no land-cover classification head, so class-to-class model predictions are currently unavailable.
+- **Index split**: `data/dynamicearthnet/splits.csv` training AOIs only. The index builder excludes AOIs not listed in that training split.
+- **License**: The compact distribution identifies CC BY 4.0. Preserve attribution when redistributing source or derived data.
+- **Index setup**: Run `python scripts/build_dynamicearthnet_index.py` to create the default `data/dynamicearthnet.db` and `data/faiss_dynamicearthnet.index.npz` artifacts before starting the API.
+
+The application decodes monthly image and label frames lazily from the local TACO archive and persists decoded frames under `data/dynamicearthnet/decoded_frames` so later requests and API restarts can reuse them. The first request for a frame still needs video decoding. FFmpeg must be available on `PATH`; install Python dependencies from `setup/requirements.txt`.
+
+## Legacy Dataset: OSCD
+
+OSCD remains available for the historical benchmark and model-training scripts, but it is no longer the application's configured imagery source. Its masks contain binary stable/change annotations and do not support named land-cover transitions. OSCD's licensing and schema details are recorded in [`data-handling/adapters/oscd/oscd_schema.md`](../data-handling/adapters/oscd/oscd_schema.md).
 
 ## Pretrained Vision-Language Models
 
-- **RemoteCLIP**: Remote-sensing vision-language model. The official repository is Apache 2.0; checkpoint use is documented at the [official RemoteCLIP repository](https://github.com/ChenDelong1999/RemoteCLIP). The ViT-B/32 comparison checkpoint has not been downloaded.
-- **CLIP (OpenAI)**: Base model ViT-B-32. Licence: MIT.
-- **Selected Phase B retrieval model**: CLIP ViT-B/32, downloaded during setup to `models/clip_vit_b32.pt` and used locally through OpenCLIP. Runtime inference does not fetch weights.
+- **CLIP ViT-B/32**: The local OpenCLIP checkpoint is `models/clip_vit_b32.pt`; runtime inference does not fetch weights.
+- **RemoteCLIP**: The comparison checkpoint has not been downloaded. See the [official RemoteCLIP repository](https://github.com/ChenDelong1999/RemoteCLIP).
 
 ## Legacy Mock UI Imagery: Provenance Unverified
 
-The mock UI includes city-labelled PNG pairs under
-`frontend/public/satellite/<city>/before.png` and `after.png`. These are used by
-curated mock-mode visualizations only; dataset mode loads imagery from the local
-OSCD archive through the API. The PNG files contain no embedded provenance
-metadata, and the repository history does not record their original provider,
-author, or licence. Treat them as unverified illustrative assets: do not cite
-them as real satellite observations or redistribute them until their provenance
-and usage rights are confirmed. The separate generated fixtures in
-`data-handling/fixtures/generate_fixtures.py` are deterministic synthetic arrays,
-not captured satellite imagery.
+City-labelled PNG pairs under `frontend/public/satellite/` are illustrative mock-mode assets. They contain no provenance metadata and must not be cited as real satellite observations.

@@ -35,6 +35,7 @@ from app.services.summary_service import SummaryService
 from app.services.query_orchestrator import QueryOrchestrator
 from app.services.review_service import ReviewService
 from adapters.oscd.oscd_metadata import OSCD_CITY_COORDINATES
+from adapters.dynamicearthnet.adapter import DynamicEarthNetAdapter
 
 logger = get_logger("terraeyes.main")
 
@@ -138,8 +139,8 @@ async def lifespan(app: FastAPI):
 
     if settings.TERRAEYES_EMBEDDING_MODEL == "clip_vit_b32" and vector_store.size == 0:
         raise RuntimeError(
-            "No CLIP-compatible image index is available. Run scripts/ingest_oscd.py "
-            "and scripts/build_index.py before starting the API."
+            "No DynamicEarthNet CLIP index is available. Run "
+            "scripts/build_dynamicearthnet_index.py before starting the API."
         )
 
     temporal_state_store = None
@@ -150,8 +151,18 @@ async def lifespan(app: FastAPI):
             weights_path=settings.TERRAEYES_MAMBA_CHECKPOINT_PATH,
         )
         temporal_state_store = TemporalStateStore(settings.TERRAEYES_TEMPORAL_STORE_PATH)
+    elif settings.TERRAEYES_CHANGE_DETECTOR == "semantic_mamba":
+        change_detector = MambaChangeDetector(
+            weights_path=settings.TERRAEYES_SEMANTIC_MAMBA_CHECKPOINT_PATH,
+        )
+        if change_detector.transition_classes != 49:
+            raise ValueError(
+                "semantic_mamba requires a 49-transition DynamicEarthNet checkpoint; "
+                "train it with scripts/train_dynamicearthnet_semantic_cd.py"
+            )
+        temporal_state_store = TemporalStateStore(settings.TERRAEYES_TEMPORAL_STORE_PATH)
     else:
-        change_detector = PixelDiffChangeDetector()
+        change_detector = PixelDiffChangeDetector(threshold=settings.TERRAEYES_MASK_THRESHOLD)
 
     # 4. Keep the synthetic catalog confined to prototype mode. Phase B uses
     # the train-only image index built from the local OSCD archive.
@@ -159,9 +170,13 @@ async def lifespan(app: FastAPI):
         seed_initial_catalog(tile_repo, vector_store, embedding_model)
 
     # 5. Instantiate Services
+    dynamicearthnet_adapter = DynamicEarthNetAdapter(
+        settings.TERRAEYES_DNE_ARCHIVE,
+        decoded_cache_dir=settings.TERRAEYES_DNE_CACHE_DIR,
+    )
     image_service = ImageService(
         tile_repo=tile_repo,
-        oscd_dir=settings.TERRAEYES_OSCD_DIR,
+        dynamicearthnet_adapter=dynamicearthnet_adapter,
         masks_cache_dir=str(Path(settings.TERRAEYES_DATA_DIR) / "masks"),
         incremental_tiles_dir=str(Path(settings.TERRAEYES_DATA_DIR) / "incremental_tiles"),
     )
@@ -194,6 +209,7 @@ async def lifespan(app: FastAPI):
     app.state.change_detector = change_detector
     app.state.change_detector_name = settings.TERRAEYES_CHANGE_DETECTOR
     app.state.image_service = image_service
+    app.state.dynamicearthnet_adapter = dynamicearthnet_adapter
     app.state.retrieval_service = retrieval_service
     app.state.comparison_service = comparison_service
     app.state.change_detection_service = cd_service
@@ -219,6 +235,8 @@ async def lifespan(app: FastAPI):
         logger.info("shutdown_complete")
     except Exception as e:
         logger.error("shutdown_error", error=str(e))
+    finally:
+        dynamicearthnet_adapter.close()
 
 
 def create_app() -> FastAPI:

@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 
 class SensorType(str, Enum):
+    PLANET = "planet"
     LANDSAT = "landsat"
     SENTINEL_1 = "sentinel-1"
     SENTINEL_2 = "sentinel-2"

@@ -1,5 +1,6 @@
 """Semantic retrieval search endpoint."""
 from fastapi import APIRouter, Request, HTTPException, Query
+from starlette.concurrency import run_in_threadpool
 from app.schemas.search import SearchRequest, SearchResponse
 
 router = APIRouter(tags=["Search"])
@@ -8,7 +9,7 @@ router = APIRouter(tags=["Search"])
 @router.post("/search", response_model=SearchResponse)
 async def search(req: SearchRequest, request: Request):
     orchestrator = request.app.state.query_orchestrator
-    return orchestrator.search(req)
+    return await run_in_threadpool(orchestrator.search, req)
 
 
 @router.get("/similar-sites/{tile_id}")
@@ -18,7 +19,8 @@ async def similar_sites(tile_id: str, request: Request, top_k: int = Query(10, g
     record = repo.get_by_id_and_date(tile_id, dates[-1]) if dates else repo.get_any_by_id(tile_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Tile is not present in the catalog")
-    image = request.app.state.image_service.get_tile_array(tile_id, record.date)
-    return request.app.state.retrieval_service.search_similar_sites(
+    image = await run_in_threadpool(request.app.state.image_service.get_tile_array, tile_id, record.date)
+    return await run_in_threadpool(
+        request.app.state.retrieval_service.search_similar_sites,
         image, record.location_id, top_k
     )

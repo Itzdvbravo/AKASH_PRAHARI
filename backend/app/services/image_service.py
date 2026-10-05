@@ -1,7 +1,7 @@
 """Image service for retrieving tile image bytes, thumbnails, and masks."""
 import io
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 import numpy as np
 from PIL import Image
 
@@ -15,6 +15,7 @@ data_handling_dir = Path(__file__).resolve().parents[3] / "data-handling"
 if str(data_handling_dir) not in sys.path:
     sys.path.insert(0, str(data_handling_dir))
 
+from adapters.dynamicearthnet.adapter import DynamicEarthNetAdapter
 from adapters.oscd.oscd_adapter import OSCDAdapter
 from adapters.oscd.oscd_metadata import OSCD_CITY_COORDINATES
 from geospatial.tile_id import parse_tile_id
@@ -26,12 +27,14 @@ class ImageService:
     def __init__(
         self,
         tile_repo: TileRepository,
-        oscd_dir: str,
+        oscd_dir: str | None = None,
         masks_cache_dir: str = "./data/masks",
         incremental_tiles_dir: str = "./data/incremental_tiles",
+        dynamicearthnet_adapter: DynamicEarthNetAdapter | None = None,
     ):
         self.tile_repo = tile_repo
-        self.oscd_adapter = OSCDAdapter(oscd_dir)
+        self.oscd_adapter = OSCDAdapter(oscd_dir) if oscd_dir else None
+        self.dynamicearthnet_adapter = dynamicearthnet_adapter
         self.masks_dir = Path(masks_cache_dir)
         self.masks_dir.mkdir(parents=True, exist_ok=True)
         self.incremental_tiles_dir = Path(incremental_tiles_dir)
@@ -45,12 +48,50 @@ class ImageService:
         if incremental_path.is_file():
             with np.load(incremental_path, allow_pickle=False) as archive:
                 return np.asarray(archive["image"], dtype=np.float32)
+        if self.dynamicearthnet_adapter:
+            return self.dynamicearthnet_adapter.load_tile_array(loc_id, date, tile_id)
+        if self.oscd_adapter:
+            try:
+                return self.oscd_adapter.load_tile_array(loc_id, date, tile_id)
+            except Exception:
+                pass
+        return self._generate_representative_tile(loc_id, date)
 
-        try:
-            return self.oscd_adapter.load_tile_array(loc_id, date, tile_id)
-        except Exception:
-            # Generate realistic geospatial representation for the location/date
-            return self._generate_representative_tile(loc_id, date)
+    def evaluate_change_mask(
+        self, tile_id: str, location_id: str, date_before: str,
+        date_after: str, predicted_mask: np.ndarray,
+    ) -> dict | None:
+        """Score model output against DNE annotations; annotations never form the output mask."""
+        if not self.dynamicearthnet_adapter:
+            return None
+        before = self.dynamicearthnet_adapter.load_semantic_tile(location_id, date_before, tile_id)
+        after = self.dynamicearthnet_adapter.load_semantic_tile(location_id, date_after, tile_id)
+        if before.shape != after.shape or before.shape != predicted_mask.shape:
+            return None
+        truth = before != after
+        prediction = predicted_mask > 0
+        tp = int(np.count_nonzero(prediction & truth))
+        fp = int(np.count_nonzero(prediction & ~truth))
+        fn = int(np.count_nonzero(~prediction & truth))
+        tn = int(np.count_nonzero(~prediction & ~truth))
+        precision = tp / (tp + fp) if tp + fp else (1.0 if tp + fn == 0 else 0.0)
+        recall = tp / (tp + fn) if tp + fn else 1.0
+        specificity = tn / (tn + fp) if tn + fp else 1.0
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        union = tp + fp + fn
+        return {
+            "precision": float(precision),
+            "recall": float(recall),
+            "f1": float(f1),
+            "iou": float(tp / union) if union else 1.0,
+            "pixel_accuracy": float((tp + tn) / truth.size),
+            "specificity": float(specificity),
+            "balanced_accuracy": float((recall + specificity) / 2),
+            "predicted_changed_pixels": int(np.count_nonzero(prediction)),
+            "expected_changed_pixels": int(np.count_nonzero(truth)),
+            "pixel_count": int(truth.size),
+            "source": "DynamicEarthNet monthly labels; evaluation only",
+        }
 
     def get_tile_bytes(
         self, tile_id: str, date: str, fmt: str = "png", thumbnail: bool = False
@@ -78,6 +119,14 @@ class ImageService:
         filepath = self.masks_dir / filename
         mask_u8 = (mask_array * 255).astype(np.uint8)
         Image.fromarray(mask_u8).save(filepath)
+        return filename
+
+    def save_semantic_mask_bytes(self, mask_id: str, transition_ids: np.ndarray) -> str:
+        """Save predicted transition IDs: 0 means unchanged, 1..49 are class pairs."""
+        filename = f"{mask_id}.semantic.png"
+        Image.fromarray(np.asarray(transition_ids, dtype=np.uint8), mode="L").save(
+            self.masks_dir / filename
+        )
         return filename
 
     def get_mask_bytes(self, filename: str) -> bytes:
@@ -109,17 +158,41 @@ class ImageService:
         Image.fromarray(rgba, mode="RGBA").save(buf, format="PNG")
         return buf.getvalue()
 
+    def get_semantic_overlay_bytes(self, filename: str) -> bytes:
+        """Render predicted from/to class IDs using a deterministic transition palette."""
+        import colorsys
+
+        filepath = self.masks_dir / filename
+        if filepath.exists():
+            with Image.open(filepath) as source:
+                transition_ids = np.asarray(source.convert("L"), dtype=np.uint8)
+        else:
+            transition_ids = np.zeros((256, 256), dtype=np.uint8)
+        rgba = np.zeros((*transition_ids.shape, 4), dtype=np.uint8)
+        for transition_id in np.unique(transition_ids):
+            if transition_id == 0 or transition_id > 49:
+                continue
+            code = int(transition_id) - 1
+            color = colorsys.hsv_to_rgb((code * 0.61803398875) % 1.0, 0.82, 1.0)
+            selected = transition_ids == transition_id
+            rgba[selected, :3] = np.round(np.asarray(color) * 255).astype(np.uint8)
+            rgba[selected, 3] = 235
+        buf = io.BytesIO()
+        Image.fromarray(rgba, mode="RGBA").save(buf, format="PNG")
+        return buf.getvalue()
+
     def get_available_dates(self, location_id: str) -> List[str]:
         dates = self.tile_repo.list_dates_for_location(location_id)
-        if not dates:
+        if not dates and self.dynamicearthnet_adapter:
+            dates = self.dynamicearthnet_adapter.list_dates(location_id)
+        elif not dates and self.oscd_adapter:
             dates = self.oscd_adapter.list_dates(location_id)
         return dates
 
     def _generate_representative_tile(self, location_id: str, date: str) -> np.ndarray:
         """Procedural realistic satellite terrain representation based on location coordinates."""
         coords = OSCD_CITY_COORDINATES.get(
-            location_id.lower(),
-            {"west": 0.0, "south": 0.0, "east": 0.05, "north": 0.05}
+            location_id.lower(), {"west": 0.0, "south": 0.0, "east": 0.05, "north": 0.05}
         )
         seed = int(abs(coords["west"] * 1000 + coords["south"] * 1000)) % 100000
         rng = np.random.RandomState(seed)

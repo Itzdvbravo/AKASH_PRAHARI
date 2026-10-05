@@ -14,25 +14,27 @@ class Settings(BaseSettings):
     TERRAEYES_LOG_LEVEL: str = "INFO"
 
     # Storage Paths
-    TERRAEYES_DB_PATH: str = "./data/terraeyes.db"
-    TERRAEYES_FAISS_INDEX_PATH: str = "./data/faiss.index"
+    TERRAEYES_DB_PATH: str = "./data/dynamicearthnet.db"
+    TERRAEYES_FAISS_INDEX_PATH: str = "./data/faiss_dynamicearthnet.index"
     TERRAEYES_TEMPORAL_STORE_PATH: str = "./data/temporal_states.h5"
     TERRAEYES_MODELS_DIR: str = "./models"
     TERRAEYES_DATA_DIR: str = "./data"
-    TERRAEYES_OSCD_DIR: str = "./images"
+    TERRAEYES_DNE_ARCHIVE: str = "./data/dynamicearthnet/dynamicearthnet-video-71psnr.tacozip"
+    TERRAEYES_DNE_CACHE_DIR: str = "./data/dynamicearthnet/decoded_frames"
 
     # Model Selection
     TERRAEYES_EMBEDDING_MODEL: str = "clip_vit_b32"  # mock | clip_vit_b32 | remote_clip
-    TERRAEYES_CHANGE_DETECTOR: str = "pixel_diff"  # pixel_diff | bit_cd | mamba_cd
+    TERRAEYES_CHANGE_DETECTOR: str = "pixel_diff"  # semantic_mamba is experimental until held-out validation passes
     TERRAEYES_TILE_SIZE: int = 256
     TERRAEYES_EMBEDDING_DIM: int = 512
     TERRAEYES_CLIP_CHECKPOINT_PATH: str = "./models/clip_vit_b32.pt"
     TERRAEYES_REMOTECLIP_CHECKPOINT_PATH: str = "./models/remoteclip_vit_b32.pt"
     TERRAEYES_MAMBA_CHECKPOINT_PATH: str = "./models/change_detection_candidates/mamba_oscd_best.pt"
+    TERRAEYES_SEMANTIC_MAMBA_CHECKPOINT_PATH: str = "./models/change_detection_candidates/mamba_dynamicearthnet_semantic.pt"
 
     # Postprocessing
     TERRAEYES_MIN_CHANGE_AREA_PX: int = 25
-    TERRAEYES_MASK_THRESHOLD: float = 0.25
+    TERRAEYES_MASK_THRESHOLD: float = 0.3
 
     model_config = SettingsConfigDict(
         env_file=(PROJECT_ROOT / ".env", PROJECT_ROOT / ".env.local"),
@@ -48,10 +50,12 @@ class Settings(BaseSettings):
             "TERRAEYES_TEMPORAL_STORE_PATH",
             "TERRAEYES_MODELS_DIR",
             "TERRAEYES_DATA_DIR",
-            "TERRAEYES_OSCD_DIR",
+            "TERRAEYES_DNE_ARCHIVE",
+            "TERRAEYES_DNE_CACHE_DIR",
             "TERRAEYES_CLIP_CHECKPOINT_PATH",
             "TERRAEYES_REMOTECLIP_CHECKPOINT_PATH",
             "TERRAEYES_MAMBA_CHECKPOINT_PATH",
+            "TERRAEYES_SEMANTIC_MAMBA_CHECKPOINT_PATH",
         )
         for field in path_fields:
             path = Path(getattr(self, field)).expanduser()

@@ -1,4 +1,4 @@
-export type Sensor = 'landsat' | 'sentinel-1' | 'sentinel-2' | 'unknown' | 'any';
+export type Sensor = 'planet' | 'landsat' | 'sentinel-1' | 'sentinel-2' | 'unknown' | 'any';
 
 export interface GeoBBox {
   west: number;
@@ -116,9 +116,36 @@ export interface ChangeDetectionResponse {
   job_id: string;
   status: 'completed' | 'processing' | 'failed';
   mask_url: string;
+  semantic_mask_url?: string | null;
+  semantic_transitions?: SemanticTransition[];
   bounding_boxes: BoundingBox[];
   summary: AnalystSummary;
+  evaluation?: DetectionEvaluation | null;
   processing_ms: number;
+}
+
+export interface SemanticTransition {
+  from_class: string;
+  to_class: string;
+  pixel_count: number;
+  area_fraction: number;
+  model_score: number;
+  color: string;
+  bounding_boxes?: BoundingBox[];
+}
+
+export interface DetectionEvaluation {
+  precision: number;
+  recall: number;
+  f1: number;
+  iou: number;
+  pixel_accuracy: number;
+  specificity: number;
+  balanced_accuracy: number;
+  predicted_changed_pixels: number;
+  expected_changed_pixels: number;
+  pixel_count: number;
+  source: string;
 }
 
 export type TemporalIconType = 'leaf' | 'crane' | 'building' | 'detection';

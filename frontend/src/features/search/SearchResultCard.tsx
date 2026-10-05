@@ -1,6 +1,6 @@
-import { useState } from 'react';
 import { SearchResultItem } from '../../types/api.types';
 import { LOCATIONS } from '../../mock/mockData';
+import { resolveApiUrl } from '../../api/client';
 
 interface SearchResultCardProps {
   item: SearchResultItem;
@@ -8,8 +8,6 @@ interface SearchResultCardProps {
 }
 
 export const SearchResultCard: React.FC<SearchResultCardProps> = ({ item, onInspect }) => {
-  const [imgEpoch, setImgEpoch] = useState<'before' | 'after'>('before');
-
   const confidencePct = Math.round(item.confidence.score * 100);
   const loc = LOCATIONS.find(l => l.id === item.tile_ref.location_id);
 
@@ -19,13 +17,9 @@ export const SearchResultCard: React.FC<SearchResultCardProps> = ({ item, onInsp
     return 'badge-amber';
   };
 
-  const imgSrc = loc
-    ? (imgEpoch === 'before' ? loc.beforeUrl : loc.afterUrl)
-    : item.thumbnail_url;
+  const imgSrc = resolveApiUrl(item.thumbnail_url);
 
-  const dateLabel = imgEpoch === 'before'
-    ? (loc ? loc.date1 : item.available_dates[0])
-    : (loc ? loc.date2 : item.tile_ref.date);
+  const dateLabel = item.tile_ref.date;
 
   return (
     <div className="result-card" id={`result-card-${item.tile_ref.tile_id}`}>
@@ -33,28 +27,15 @@ export const SearchResultCard: React.FC<SearchResultCardProps> = ({ item, onInsp
       <div className="thumbnail-wrapper">
         <img
           src={imgSrc}
-          alt={`${item.tile_ref.location_id} ${imgEpoch} satellite view`}
+          alt={`${item.tile_ref.location_id} satellite thumbnail`}
           className="thumbnail-img"
           loading="lazy"
         />
-        {/* Epoch toggle overlay */}
-        <div className="epoch-toggle">
-          <button
-            type="button"
-            className={`epoch-btn ${imgEpoch === 'before' ? 'active' : ''}`}
-            onClick={() => setImgEpoch('before')}
-          >T1</button>
-          <button
-            type="button"
-            className={`epoch-btn ${imgEpoch === 'after' ? 'active' : ''}`}
-            onClick={() => setImgEpoch('after')}
-          >T2</button>
-        </div>
         {/* Date watermark */}
         <div className="img-date-badge">{dateLabel}</div>
         {/* Confidence overlay */}
         <div className={`img-confidence-badge badge ${getBadgeClass(item.confidence.score)}`}>
-          {confidencePct}% Match
+          Score {confidencePct}%
         </div>
       </div>
 
@@ -73,34 +54,16 @@ export const SearchResultCard: React.FC<SearchResultCardProps> = ({ item, onInsp
           </span>
         </div>
 
-        {loc && (
-          <div style={{
-            fontSize: '0.78rem',
-            color: 'var(--text-secondary)',
-            lineHeight: 1.5,
-            borderLeft: '2px solid var(--border-accent)',
-            paddingLeft: '0.6rem',
-          }}>
-            {loc.changeType}
-          </div>
-        )}
-
         <div className="result-meta-row">
-          <span>📅 {loc?.date1 ?? item.available_dates[0]}</span>
+          <span>📅 {item.available_dates[0]}</span>
           <span style={{ color: 'var(--text-muted)' }}>→</span>
-          <span>📅 {loc?.date2 ?? item.tile_ref.date}</span>
+          <span>📅 {item.tile_ref.date}</span>
         </div>
 
-        {loc && (
-          <div className="result-meta-row">
-            <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>
-              Changed area: ~{(loc.changedFraction * 100).toFixed(1)}% of tile
-            </span>
-            <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>
-              • {item.available_dates.length} epochs
-            </span>
-          </div>
-        )}
+        <div className="result-meta-row">
+          <span>{item.available_dates.length} available epochs</span>
+          <span>Rank #{item.rank}</span>
+        </div>
 
         <button
           type="button"

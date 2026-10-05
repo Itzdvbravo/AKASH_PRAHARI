@@ -8,52 +8,64 @@ import { AnalystSummaryCard } from './features/comparison/AnalystSummaryCard';
 import { SystemStatusView } from './features/system/SystemStatusView';
 import {
   SearchResultItem,
+  GeoBBox,
   ComparisonResponse,
   ChangeDetectionResponse,
 } from './types/api.types';
-import {
-  LOCATIONS,
-  getSearchResults,
-  matchQueryToPreset,
-  buildComparison,
-  buildChangeDetection,
-  MOCK_COMPARISON_PARIS,
-  MOCK_CHANGE_DETECTION_PARIS,
-} from './mock/mockData';
+import { searchTiles } from './api/search.api';
+import { fetchComparison, detectChange } from './api/comparison.api';
+import { fetchHealth } from './api/system.api';
+import { LOCATIONS, QUERY_PRESETS, matchQueryToPreset } from './mock/mockData';
 
-// Simulated async delay for realism
-const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+const SEARCH_RESULT_LIMIT = 100;
+const RESULTS_PER_PAGE = 12;
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'search' | 'comparison' | 'system'>('search');
   const [results, setResults] = useState<SearchResultItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [activeQuery, setActiveQuery] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [embeddingModel, setEmbeddingModel] = useState<string | null>(null);
+  const [indexedTileCount, setIndexedTileCount] = useState<number | null>(null);
+  const [resultsPage, setResultsPage] = useState(1);
 
   // Comparison State
-  const [comparison, setComparison] = useState<ComparisonResponse>(MOCK_COMPARISON_PARIS);
-  const [changeDetection, setChangeDetection] = useState<ChangeDetectionResponse | null>(
-    MOCK_CHANGE_DETECTION_PARIS
-  );
+  const [comparison, setComparison] = useState<ComparisonResponse | null>(null);
+  const [comparisonGeoBBox, setComparisonGeoBBox] = useState<GeoBBox | null>(null);
+  const [changeDetection, setChangeDetection] = useState<ChangeDetectionResponse | null>(null);
   const [isComparing, setIsComparing] = useState(false);
   const [showTemporalProgression, setShowTemporalProgression] = useState(false);
 
   // Initial load — show all locations
   useEffect(() => {
-    handleSearch('', 'q_all');
+    void handleSearch('', 'q_all');
+    fetchHealth().then(health => {
+      setEmbeddingModel(health.embedding_model);
+      setIndexedTileCount(health.faiss_index_size);
+    }).catch(() => undefined);
   }, []);
 
   const handleSearch = async (queryText: string, presetId: string) => {
     setIsSearching(true);
+    setResultsPage(1);
     setActiveQuery(queryText);
-    await delay(600); // simulate network
+    setError(null);
     try {
-      let pid = presetId;
-      if (!pid) {
-        pid = matchQueryToPreset(queryText).id;
-      }
-      const res = getSearchResults(pid);
-      setResults(res);
+      const preset = QUERY_PRESETS.find(candidate => candidate.id === presetId)
+        ?? matchQueryToPreset(queryText);
+      const locationFilter = embeddingModel === 'mock' && preset.id !== 'q_all' && preset.locationIds.length < 20
+        ? preset.locationIds[0]
+        : undefined;
+      const response = await searchTiles({
+        query_type: 'text',
+        query_text: queryText,
+        filters: { sensor: 'any', location: locationFilter },
+        top_k: SEARCH_RESULT_LIMIT,
+      });
+      setResults(response.results);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Search failed. Check that the API server is running.');
     } finally {
       setIsSearching(false);
     }
@@ -61,14 +73,23 @@ export default function App() {
 
   const handleInspectTile = async (item: SearchResultItem) => {
     setActiveTab('comparison');
+    setComparisonGeoBBox(item.geo_bbox);
     setIsComparing(true);
-    await delay(800); // simulate detection pipeline
+    setError(null);
     try {
-      const loc = LOCATIONS.find(l => l.id === item.tile_ref.location_id);
-      if (loc) {
-        setComparison(buildComparison(loc));
-        setChangeDetection(buildChangeDetection(loc));
-      }
+      const dates = item.available_dates;
+      if (dates.length < 2) throw new Error('This result has fewer than two available dates to compare.');
+      const pair = await fetchComparison({
+        location_id: item.tile_ref.location_id,
+        tile_id: item.tile_ref.tile_id,
+        date_before: dates[0],
+        date_after: dates[dates.length - 1],
+        sensor: item.tile_ref.sensor,
+      });
+      setComparison(pair);
+      setChangeDetection(await detectChange({ comparison_id: pair.comparison_id }));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not load the comparison.');
     } finally {
       setIsComparing(false);
     }
@@ -76,12 +97,12 @@ export default function App() {
 
   const handleRefreshDetection = async () => {
     setIsComparing(true);
-    await delay(500);
+    setError(null);
     try {
-      const loc = LOCATIONS.find(l => l.id === comparison.before.tile_ref.location_id);
-      if (loc) {
-        setChangeDetection(buildChangeDetection(loc));
-      }
+      if (!comparison) return;
+      setChangeDetection(await detectChange({ comparison_id: comparison.comparison_id }));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Change detection failed.');
     } finally {
       setIsComparing(false);
     }
@@ -90,19 +111,32 @@ export default function App() {
   const resultLabel = activeQuery
     ? `"${activeQuery.length > 60 ? activeQuery.slice(0, 60) + '…' : activeQuery}"`
     : 'All Locations';
+  const pageCount = Math.ceil(results.length / RESULTS_PER_PAGE);
+  const pageResults = results.slice(
+    (resultsPage - 1) * RESULTS_PER_PAGE,
+    resultsPage * RESULTS_PER_PAGE,
+  );
+  const rangeStart = results.length === 0 ? 0 : (resultsPage - 1) * RESULTS_PER_PAGE + 1;
+  const rangeEnd = Math.min(resultsPage * RESULTS_PER_PAGE, results.length);
 
   return (
     <div className="app-container">
-      <Header activeTab={activeTab} onSelectTab={setActiveTab} mockMode={true} />
+      <Header activeTab={activeTab} onSelectTab={setActiveTab} mockMode={embeddingModel === 'mock'} />
 
       <main className="main-content">
         {activeTab === 'search' && (
           <section aria-label="Search and Results">
             <SearchBar onSearch={handleSearch} isLoading={isSearching} />
+            {error && <div className="ui-card" role="alert" style={{ color: 'var(--accent-rose)', marginTop: '1rem' }}>{error}</div>}
 
             <div className="results-header">
               <div>
                 <h2 className="section-title">Retrieved Satellite Scenes</h2>
+                {embeddingModel === 'clip_vit_b32' && indexedTileCount !== null && (
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                    Searching {indexedTileCount} indexed tiles from the OSCD training split; held-out test cities are excluded.
+                  </p>
+                )}
                 {activeQuery && (
                   <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
                     Query: {resultLabel}
@@ -116,7 +150,8 @@ export default function App() {
                   </span>
                 )}
                 <span className="results-count">
-                  {results.length} candidate tile{results.length === 1 ? '' : 's'} found
+                  {results.length} ranked candidate{results.length === 1 ? '' : 's'}
+                  {indexedTileCount !== null && ` · ${indexedTileCount} indexed tiles`}
                 </span>
               </div>
             </div>
@@ -128,7 +163,7 @@ export default function App() {
               </div>
             ) : (
               <div className="results-grid">
-                {results.map((item) => (
+                {pageResults.map((item) => (
                   <SearchResultCard
                     key={`${item.tile_ref.tile_id}_${item.rank}`}
                     item={item}
@@ -137,18 +172,47 @@ export default function App() {
                 ))}
               </div>
             )}
+            {pageCount > 1 && (
+              <nav className="results-pagination" aria-label="Search result pages">
+                <span className="results-count">
+                  Showing {rangeStart}–{rangeEnd} of {results.length} ranked candidates
+                </span>
+                <div className="pagination-controls">
+                  <button
+                    type="button"
+                    className="secondary-btn"
+                    onClick={() => setResultsPage(page => Math.max(1, page - 1))}
+                    disabled={resultsPage === 1}
+                  >
+                    Previous
+                  </button>
+                  <span className="results-count" aria-live="polite">Page {resultsPage} of {pageCount}</span>
+                  <button
+                    type="button"
+                    className="secondary-btn"
+                    onClick={() => setResultsPage(page => Math.min(pageCount, page + 1))}
+                    disabled={resultsPage === pageCount}
+                  >
+                    Next
+                  </button>
+                </div>
+              </nav>
+            )}
           </section>
         )}
 
-        {activeTab === 'comparison' && (
-          <section aria-label="Temporal Comparison">
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
-              <button className="secondary-btn" onClick={() => setShowTemporalProgression(value => !value)}>
-                {showTemporalProgression ? 'Return to image comparison' : 'View temporal progression'}
-              </button>
-            </div>
-            {showTemporalProgression ? <TemporalProgressionViewer locationId="kaziranga" /> : <ComparisonViewer
+        {activeTab === 'comparison' && comparison && (
+          <section aria-label="Temporal Analysis">
+            {embeddingModel === 'mock' && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
+                <button className="secondary-btn" onClick={() => setShowTemporalProgression(value => !value)}>
+                  {showTemporalProgression ? 'Open image comparison' : 'View temporal progression'}
+                </button>
+              </div>
+            )}
+            {embeddingModel === 'mock' && showTemporalProgression && LOCATIONS.some(location => location.id === comparison.before.tile_ref.location_id) ? <TemporalProgressionViewer locationId={comparison.before.tile_ref.location_id} /> : <ComparisonViewer
               comparison={comparison}
+              geoBBox={comparisonGeoBBox ?? undefined}
               changeDetection={changeDetection}
               onRefreshDetection={handleRefreshDetection}
               isLoading={isComparing}
@@ -162,6 +226,12 @@ export default function App() {
             )}
           </section>
         )}
+
+        {activeTab === 'comparison' && !comparison && (
+          <section aria-label="Temporal Analysis" className="ui-card">Choose a search result and select “Inspect & Compare Changes” to run the live comparison.</section>
+        )}
+
+        {activeTab === 'comparison' && error && <div className="ui-card" role="alert" style={{ color: 'var(--accent-rose)', marginTop: '1rem' }}>{error}</div>}
 
         {activeTab === 'system' && (
           <section aria-label="System Health">

@@ -10,6 +10,7 @@ Standard Transformer architectures scale quadratically $O(N^2)$ with token seque
 We select **Mamba (Selective State Space Model)** for spatio-temporal hidden state propagation and temporal change detection, per the reference architecture.
 
 ## Consequences
-- Linear $O(N)$ computational complexity with respect to temporal time steps and sequence length.
-- Recurrent hidden state snapshots can be persisted in the temporal database (`temporal_states`), enabling incremental updates when a new satellite acquisition is ingested without reprocessing the full historical stack.
-- Baseline detector (`pixel_diff_otsu`) provides immediate non-parametric verification prior to GPU training of the Mamba architecture.
+- The prototype now has trainable bidirectional spatial scans, a temporal selective SSM over per-pixel features, a binary change decoder, and incremental HDF5 state persistence.
+- The implementation uses a reference recurrent scan and causal temporal convolution; it does not use the official fused CUDA kernels or claim their measured throughput.
+- OSCD contains only two image dates and binary change labels. Multi-date sequence support is implemented, but long-sequence behavior and semantic land-cover transitions remain unvalidated until a suitable dataset is added.
+- `pixel_diff_otsu` remains the deployment default. A prototype run inspected OSCD test metrics during architecture iteration, so the current OSCD benchmark is exploratory; final model selection requires a new geographic holdout.

@@ -9,6 +9,9 @@ class SearchFilters(BaseModel):
     date_from: Optional[str] = Field(default=None, description="Start date ISO 8601")
     date_to: Optional[str] = Field(default=None, description="End date ISO 8601")
     sensor: Optional[SensorType] = Field(default=SensorType.ANY, description="Sensor filter")
+    area_of_interest: Optional[GeoBBox] = Field(
+        default=None, description="Optional WGS84 bounding box; intersecting tiles are retained"
+    )
 
 
 class SearchRequest(BaseModel):
@@ -16,7 +19,7 @@ class SearchRequest(BaseModel):
     query_text: Optional[str] = Field(default="", max_length=500)
     query_image_b64: Optional[str] = Field(default=None, description="Base64 encoded query image bytes")
     filters: Optional[SearchFilters] = Field(default_factory=SearchFilters)
-    top_k: int = Field(default=10, ge=1, le=50)
+    top_k: int = Field(default=10, ge=1, le=100)
 
     @model_validator(mode="after")
     def validate_query_payload(self):

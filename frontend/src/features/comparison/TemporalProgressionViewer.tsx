@@ -14,7 +14,7 @@ interface TemporalProgressionViewerProps {
 }
 
 export const TemporalProgressionViewer: React.FC<TemporalProgressionViewerProps> = ({
-  locationId = 'kaziranga',
+  locationId = 'dubai',
   onLocationChange,
   isLoading = false,
 }) => {
@@ -47,6 +47,63 @@ export const TemporalProgressionViewer: React.FC<TemporalProgressionViewerProps>
   }, [locationId]);
 
   const data: TemporalProgressionData = getTemporalProgression(selectedLocId);
+  const [copyStatus, setCopyStatus] = useState('Copy coordinates');
+
+  const footprintAreaKm2 = (() => {
+    const radiusKm = 6371.0088;
+    const { west, south, east, north } = data.footprint;
+    const radians = (degrees: number) => (degrees * Math.PI) / 180;
+    return (radiusKm ** 2) * radians(east - west) *
+      (Math.sin(radians(north)) - Math.sin(radians(south)));
+  })();
+  const changedAreaKm2 = footprintAreaKm2 * data.changedPixelFraction;
+
+  const copyCoordinates = async () => {
+    const { latitude, longitude } = data.coordinates;
+    try {
+      await navigator.clipboard.writeText(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+      setCopyStatus('Coordinates copied');
+      window.setTimeout(() => setCopyStatus('Copy coordinates'), 1800);
+    } catch {
+      setCopyStatus('Clipboard unavailable');
+      window.setTimeout(() => setCopyStatus('Copy coordinates'), 1800);
+    }
+  };
+
+  const exportFootprint = () => {
+    const { west, south, east, north } = data.footprint;
+    const geojson = {
+      type: 'FeatureCollection',
+      name: `${data.locationId}_temporal_analysis`,
+      features: [{
+        type: 'Feature',
+        properties: {
+          location: data.locationLabel,
+          date_range: data.timeRange,
+          coordinates: data.coordinates,
+          crs: data.spatialReference,
+          change_type: data.changeType,
+          changed_pixel_fraction: data.changedPixelFraction,
+          estimated_footprint_area_km2: Number(footprintAreaKm2.toFixed(3)),
+          estimated_changed_area_km2: Number(changedAreaKm2.toFixed(3)),
+          source: data.source,
+          raster_format: data.rasterFormat,
+          raster_metadata_status: data.rasterMetadataStatus,
+        },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[[west, south], [east, south], [east, north], [west, north], [west, south]]],
+        },
+      }],
+    };
+    const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/geo+json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${data.locationId}-temporal-footprint.geojson`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   const handleSelectLocation = (id: string) => {
     setSelectedLocId(id);
@@ -187,7 +244,7 @@ export const TemporalProgressionViewer: React.FC<TemporalProgressionViewerProps>
           >
             {LOCATIONS.map(loc => (
               <option key={loc.id} value={loc.id}>
-                {loc.label}, {loc.country} {loc.id === 'kaziranga' ? '★ (Showcase)' : ''}
+                {loc.label}, {loc.country}
               </option>
             ))}
           </select>
@@ -266,6 +323,61 @@ export const TemporalProgressionViewer: React.FC<TemporalProgressionViewerProps>
 
       {/* ── Main Comparison Container ── */}
       <div className="temporal-showcase-container">
+        <section className="temporal-analyst-panel" aria-label="Geospatial and raster metadata">
+          <div className="temporal-panel-heading">
+            <div>
+              <h3>Scene &amp; geospatial metadata</h3>
+              <p>Location, footprint and source details for this temporal sample</p>
+            </div>
+            <span className="temporal-source-badge">{data.source}</span>
+          </div>
+          <div className="temporal-metadata-grid">
+            <div className="temporal-metadata-item">
+              <span>Representative latitude / longitude</span>
+              <strong>{data.coordinates.latitude.toFixed(6)}, {data.coordinates.longitude.toFixed(6)}</strong>
+            </div>
+            <div className="temporal-metadata-item">
+              <span>Footprint bounds (W / S / E / N)</span>
+              <strong>{data.footprint.west.toFixed(5)}, {data.footprint.south.toFixed(5)}, {data.footprint.east.toFixed(5)}, {data.footprint.north.toFixed(5)}</strong>
+            </div>
+            <div className="temporal-metadata-item">
+              <span>Footprint coordinate reference</span>
+              <strong>{data.spatialReference}</strong>
+            </div>
+            <div className="temporal-metadata-item">
+              <span>Raster asset</span>
+              <strong>{data.rasterFormat}</strong>
+            </div>
+            <div className="temporal-metadata-item temporal-metadata-wide">
+              <span>GeoTIFF / COG metadata</span>
+              <strong>{data.rasterMetadataStatus}</strong>
+            </div>
+            <div className="temporal-metadata-item">
+              <span>Acquisition dates · sensor</span>
+              <strong>{baselineStage.date} → {targetStage.date} · {baselineStage.sensor ?? 'Sensor not recorded'}</strong>
+            </div>
+            <div className="temporal-metadata-item">
+              <span>Cloud cover (baseline / target)</span>
+              <strong>{baselineStage.cloudCoverPct ?? '—'}% / {targetStage.cloudCoverPct ?? '—'}%</strong>
+            </div>
+          </div>
+        </section>
+
+        <section className="temporal-analyst-tools" aria-label="Analyst tools">
+          <div>
+            <h3>Analyst tools</h3>
+            <p>Area values are approximate: changed fraction is applied to the geographic footprint.</p>
+          </div>
+          <div className="temporal-area-metrics">
+            <div><span>Footprint area</span><strong>{footprintAreaKm2.toFixed(2)} km²</strong></div>
+            <div><span>Estimated changed area</span><strong>{changedAreaKm2.toFixed(2)} km²</strong></div>
+          </div>
+          <div className="temporal-tool-actions">
+            <button type="button" className="control-pill" onClick={copyCoordinates}>{copyStatus}</button>
+            <button type="button" className="control-pill" onClick={exportFootprint}>Export footprint GeoJSON</button>
+          </div>
+        </section>
+
         {/* Top Header Summary Strip */}
         <div className="temporal-header-strip">
           {/* Col 1: Location */}

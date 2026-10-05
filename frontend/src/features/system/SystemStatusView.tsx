@@ -5,10 +5,12 @@ import { fetchHealth } from '../../api/system.api';
 export const SystemStatusView: React.FC = () => {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     fetchHealth()
       .then((data) => setHealth(data))
+      .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, []);
 
@@ -16,7 +18,7 @@ export const SystemStatusView: React.FC = () => {
     return <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>Querying Subsystems...</div>;
   }
 
-  if (!health) {
+  if (error || !health) {
     return <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--accent-rose)' }}>Unable to query system health</div>;
   }
 
@@ -69,14 +71,16 @@ export const SystemStatusView: React.FC = () => {
 
         <div className="system-status-card">
           <div className="system-status-header">
-            <span className="system-status-title">Data Ingestion Adapters</span>
+            <span className="system-status-title">Dataset Source</span>
             <span className="badge badge-emerald">Ready</span>
           </div>
           <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-            Sentinel-2 L2A / Sentinel-1 GRD / Synthetic Fixture Adapter
+            {health.embedding_model === 'mock' ? 'Synthetic prototype catalog' : 'OSCD Sentinel-2 train split'}
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
-            Supports on-demand dataset ingestion
+            {health.embedding_model === 'mock'
+              ? 'Demo scenes and dates for prototype mode'
+              : '14 train cities indexed; 10 held-out test cities excluded'}
           </div>
         </div>
       </div>

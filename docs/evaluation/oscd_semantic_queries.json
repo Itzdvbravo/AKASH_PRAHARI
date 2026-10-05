@@ -1,0 +1,113 @@
+{
+  "dataset": "OSCD",
+  "split": "test",
+  "candidate_set": "all 47 preprocessed after-date tiles from the 10 official test cities",
+  "annotation_method": "Manual scene-level relevance labels based on visual inspection of the B04/B03/B02 after-date composites. Labels describe visible scene content; they are not OSCD change-mask labels.",
+  "queries": [
+    {
+      "id": "industrial_blue_roofs",
+      "query": "large blue-roof industrial warehouses in a green urban district",
+      "relevant_tile_ids": [
+        "chongqing_0000_0000_sentinel-2",
+        "chongqing_0000_0001_sentinel-2",
+        "chongqing_0002_0000_sentinel-2"
+      ]
+    },
+    {
+      "id": "urban_water_body",
+      "query": "a broad reservoir or water body beside dense city blocks",
+      "relevant_tile_ids": [
+        "brasilia_0000_0001_sentinel-2"
+      ]
+    },
+    {
+      "id": "planned_desert_city",
+      "query": "a planned city with circular boulevards surrounded by desert",
+      "relevant_tile_ids": [
+        "dubai_0000_0000_sentinel-2"
+      ]
+    },
+    {
+      "id": "desert_subdivisions",
+      "query": "residential street grids spreading into open tan desert",
+      "relevant_tile_ids": [
+        "lasvegas_0000_0000_sentinel-2",
+        "lasvegas_0000_0001_sentinel-2",
+        "lasvegas_0000_0002_sentinel-2",
+        "lasvegas_0001_0000_sentinel-2",
+        "lasvegas_0001_0001_sentinel-2",
+        "lasvegas_0001_0002_sentinel-2",
+        "lasvegas_0002_0000_sentinel-2",
+        "lasvegas_0002_0001_sentinel-2",
+        "lasvegas_0002_0002_sentinel-2"
+      ]
+    },
+    {
+      "id": "rural_village_fields",
+      "query": "a small rural village among patchwork fields and woodland",
+      "relevant_tile_ids": [
+        "norcia_0000_0000_sentinel-2",
+        "norcia_0000_0001_sentinel-2",
+        "saclay_w_0000_0000_sentinel-2",
+        "saclay_w_0000_0001_sentinel-2",
+        "saclay_w_0000_0002_sentinel-2"
+      ]
+    },
+    {
+      "id": "dense_european_urban",
+      "query": "dense European city blocks with parks and tree-lined streets",
+      "relevant_tile_ids": [
+        "milano_0000_0000_sentinel-2",
+        "milano_0000_0001_sentinel-2",
+        "milano_0001_0000_sentinel-2",
+        "milano_0001_0001_sentinel-2",
+        "montpellier_0000_0000_sentinel-2",
+        "montpellier_0000_0001_sentinel-2",
+        "montpellier_0001_0000_sentinel-2"
+      ]
+    },
+    {
+      "id": "hillside_settlement",
+      "query": "an irregular settlement surrounded by steep green hills",
+      "relevant_tile_ids": [
+        "rio_0000_0000_sentinel-2",
+        "rio_0000_0001_sentinel-2"
+      ]
+    },
+    {
+      "id": "exposed_earth_construction",
+      "query": "large exposed-earth construction sites interrupting existing urban blocks",
+      "relevant_tile_ids": [
+        "brasilia_0000_0000_sentinel-2",
+        "brasilia_0001_0000_sentinel-2",
+        "dubai_0002_0001_sentinel-2"
+      ]
+    },
+    {
+      "id": "geometric_farmland",
+      "query": "geometric agricultural fields and rural roads between small communities",
+      "relevant_tile_ids": [
+        "norcia_0000_0000_sentinel-2",
+        "norcia_0000_0001_sentinel-2",
+        "saclay_w_0000_0000_sentinel-2",
+        "saclay_w_0000_0001_sentinel-2",
+        "saclay_w_0000_0002_sentinel-2",
+        "saclay_w_0001_0000_sentinel-2",
+        "saclay_w_0001_0001_sentinel-2",
+        "saclay_w_0001_0002_sentinel-2",
+        "valencia_0000_0001_sentinel-2",
+        "valencia_0001_0000_sentinel-2",
+        "valencia_0001_0001_sentinel-2"
+      ]
+    },
+    {
+      "id": "highway_interchange",
+      "query": "a major highway interchange crossing dense residential neighborhoods",
+      "relevant_tile_ids": [
+        "dubai_0001_0000_sentinel-2",
+        "lasvegas_0001_0001_sentinel-2",
+        "milano_0001_0000_sentinel-2"
+      ]
+    }
+  ]
+}

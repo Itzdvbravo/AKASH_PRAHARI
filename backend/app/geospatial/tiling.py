@@ -4,12 +4,12 @@ from typing import Dict
 
 def parse_tile_id(tile_id: str) -> Dict[str, str]:
     parts = tile_id.split("_")
-    if len(parts) >= 4 and parts[1].isdigit() and parts[2].isdigit():
+    if len(parts) >= 4 and parts[-3].isdigit() and parts[-2].isdigit():
         return {
-            "location_id": parts[0],
-            "row": parts[1],
-            "col": parts[2],
-            "sensor": parts[3],
+            "location_id": "_".join(parts[:-3]),
+            "row": parts[-3],
+            "col": parts[-2],
+            "sensor": parts[-1],
         }
     return {
         "location_id": parts[0] if parts else "unknown",

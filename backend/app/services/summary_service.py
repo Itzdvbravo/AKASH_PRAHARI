@@ -16,20 +16,13 @@ class SummaryService:
         cd_output: ChangeDetectionOutput,
         detector_name: str = "pixel_diff_otsu"
     ) -> AnalystSummary:
-        # Infer semantic category based on changed fraction & detector signal
-        pct = cd_output.changed_pixel_fraction
-        if pct > 0.15:
-            change_type = "urban_expansion_or_earthworks"
-        elif pct > 0.05:
-            change_type = "structural_development"
-        elif pct > 0.01:
-            change_type = "minor_surface_alteration"
-        else:
-            change_type = "negligible_variation"
+        # Binary OSCD masks do not identify what land-cover class changed.
+        # Avoid inventing semantic classes from the fraction of changed pixels.
+        change_type = "binary_surface_change" if cd_output.changed_pixel_fraction > 0 else "no_change_detected"
 
         confidence_obj = Confidence(
             score=cd_output.confidence_score,
-            method="pixel_fraction_and_diff_magnitude",
+            method=f"{detector_name}_uncalibrated_score",
             calibrated=False
         )
 

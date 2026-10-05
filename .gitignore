@@ -1,3 +1,5 @@
+images/
+
 # Python / Virtualenv
 __pycache__/
 *.py[cod]
@@ -7,6 +9,8 @@ venv/
 ENV/
 env/
 .pytest_cache/
+.coverage
+htmlcov/
 .mypy_cache/
 .ruff_cache/
 *.egg-info/

@@ -97,7 +97,25 @@ Core requirements confirmed from the reference image:
 | Q9 | Are Sentinel-1, Sentinel-2, and Landsat required for Phase A or only Phase B? | Scope boundary. |
 | Q10 | Is the "confidence score" a calibrated probability, a cosine similarity, or a heuristic blend? | Output schema. |
 
-### 2.3 Items That Must Be Verified When OSCD Becomes Available
+### 2.3 Prototype-scope dispositions for Q1–Q10
+
+These are implementation-scope decisions for the current local prototype, not
+permanent deployment or Phase C architecture approvals.
+
+| Question | Prototype disposition |
+|----------|------------------------|
+| Q1 Hardware | CPU is the supported and exercised baseline; CLIP can use CUDA when available. Mamba training hardware remains open. |
+| Q2 Temporal database | The optional `mamba_cd` path stores model-fingerprinted per-tile/per-date recurrent state and temporal features in HDF5; pixel-difference mode does not write temporal state. |
+| Q3 Spatial queries | Deferred: tiles include geographic bounds, but the prototype has no spatial-query endpoint or spatial index. |
+| Q4 Analyst feedback | Out of prototype scope; no feedback controls or persistence are implemented. Revisit if feedback collection is prioritized later. |
+| Q5 Bounding boxes | Connected components are extracted from the change mask; without scikit-image, one extent box is returned. No object detector is used. |
+| Q6 Users | Single-user local operation; authentication, user isolation, and concurrency guarantees are not included. |
+| Q7 Tile size | Use 256×256 tiles for the current prototype and OSCD index. Changing size requires coordinated re-indexing and evaluation. |
+| Q8 Offline setup | Download weights as an explicit setup step. Runtime uses local weights; the UI has no external font dependency, and the browser walkthrough observed no external requests. |
+| Q9 Sensors | Dataset mode uses Sentinel-2 OSCD RGB composites. Other sensor values in schemas do not imply dataset ingestion support. |
+| Q10 Confidence | Retrieval scores are cosine similarity; change and box scores are heuristics. All remain marked uncalibrated and are not probabilities. |
+
+### 2.4 Items That Must Be Verified When OSCD Becomes Available
 - Band composition (OSCD uses Sentinel-2 bands B01–B12 plus B8A).
 - Directory structure (city/date/band TIFF organisation).
 - Available ground-truth change masks (binary rasters).
@@ -505,14 +523,14 @@ TERRAEYES_FAISS_INDEX_PATH=./data/faiss.index
 TERRAEYES_TEMPORAL_STORE_PATH=./data/temporal_states.h5
 TERRAEYES_MODELS_DIR=./models
 TERRAEYES_DATA_DIR=./data
-TERRAEYES_OSCD_DIR=./data/oscd          # Path to downloaded OSCD (blank until downloaded)
-TERRAEYES_EMBEDDING_MODEL=mock          # mock | remote_clip | georscclip
+TERRAEYES_OSCD_DIR=./images             # Local OSCD archive
+TERRAEYES_EMBEDDING_MODEL=clip_vit_b32  # mock | clip_vit_b32 | remote_clip
 TERRAEYES_CHANGE_DETECTOR=pixel_diff    # pixel_diff | bit_cd | mamba_cd
 TERRAEYES_TILE_SIZE=256
 TERRAEYES_EMBEDDING_DIM=512
 
 # Frontend
-VITE_API_BASE_URL=http://localhost:8000/api/v1
+VITE_API_BASE_URL=http://localhost:8000
 ```
 
 ### 6.4 Logging Convention
@@ -1525,6 +1543,21 @@ WS-4 is the critical path bottleneck for the prototype because the frontend can 
 
 **Approval required:** Yes — user reviews working prototype demo before Phase B begins.
 
+#### Phase A execution notes (2026-10-03)
+
+| Check | Status | Evidence / limitation |
+|-------|--------|-----------------------|
+| Frontend-to-API integration | Complete | Search, comparison, change detection, and health use live FastAPI routes. API failures are shown instead of silently returning mock responses. Relative image and mask URLs resolve against the API host. The Norcia demo catalog entry supports the existing disaster preset. |
+| Phase A launch configuration | Complete | `setup/README.md` documents mock embedding mode for the walkthrough. The default CLIP mode requires a compatible local index, which is not present in this checkout. |
+| Frontend production build | Complete | `npm run build` succeeds. |
+| Frontend API tests | Complete | `npm test`: 4 passed. |
+| Backend endpoint walkthrough | Complete | Manual local API smoke check passed health, three-result search, comparison, before/after PNGs, change detection, and mask PNG. Pixel-difference can return an empty mask for some pairs; other scenes returned non-empty boxes. |
+| Backend and data-handling automated tests | Complete | `pytest backend/tests/ data-handling/tests/`: 26 passed. Backend service line coverage is 83% across 12 backend tests, above the 80% target; `setup/requirements-dev.txt` and `setup/README.md` now document the coverage tool and command. |
+| Frontend build and tests | Complete with limits | `npm run build` succeeds on Vite 6.4.3; `npm run test:coverage` passes all 9 tests on Vitest 5.0.3. Feature line coverage is 75.14%, branch coverage is 63.42%, and `npm audit` reports zero vulnerabilities. Unused `react-router-dom` was removed. |
+| Browser walkthrough and frontend component coverage | Complete with limits | Headless Edge interaction walkthrough passed: initial results, preset search, temporal-analysis empty state, result inspection, before/after imagery, change summary, slider and bbox controls, detection rerun, and system health. The font CDN dependency was removed; the walkthrough completed with no failed network requests. Five JSDOM App-flow tests cover dataset search/comparison, free-text search/reset, keyboard suggestions/outside-click behavior, the mock-only temporal progression control, and OSCD health details. All 9 Vitest tests and the production build pass. Feature line coverage is 75.14% (threshold 70%); branch coverage is 63.42%. |
+| Sample imagery provenance | Partial | OSCD imagery and label terms are documented. Legacy mock UI PNGs lack embedded source/licence records; this is now called out in `docs/data_provenance.md` and they remain mock-mode illustrative assets only. Do not claim full image provenance until the sources are confirmed or those assets are removed. |
+| Phase A sign-off | Pending | Independent user walkthrough and approval are still required before claiming Phase A sign-off. The mock UI imagery provenance is separately unresolved and documented. |
+
 ---
 
 ### Stage 3: Phase B — OSCD Integration and Real Models (~5–10 days, requires OSCD download)
@@ -1543,6 +1576,44 @@ WS-4 is the critical path bottleneck for the prototype because the frontend can 
 | 3.10 | WS-6 | Implement approved change detector adapter |
 | 3.11 | WS-4 | Wire approved models into backend via config switch |
 | 3.12 | All | Phase B integration test; evaluation script on OSCD test split |
+
+#### Phase B execution notes (2026-10-02)
+
+| Step | Status | Evidence / limitation |
+|------|--------|-----------------------|
+| 3.1 | Complete | `images/` verified: 24 city folders, both dates, and all 13 expected bands in both date folders. See `data-handling/adapters/oscd/oscd_schema.md`. The local split is 14 train / 10 test, not the city lists initially assumed. |
+| 3.2 | Complete | OSCD date sidecars normalize to ISO dates; city GeoJSON supplies bounding boxes. Paris and Abu Dhabi loads were smoke-checked. Backend and data-handling tests pass (23 total). |
+| 3.3 | Existing pipeline used | Sentinel-2 normalization and cloud-mask preprocessing are applied to the rectified RGB composite (B04/B03/B02). |
+| 3.4 | Complete | `ingest_oscd.py` wrote paired 256×256 tiles for all 24 imagery scenes to `data/oscd_tiles/manifest.json` (147 tiles). |
+| 3.5 | Complete | Backend's OSCD path defaults to `./images`; `ImageService` already uses `OSCDAdapter`. |
+| 3.6 | Provisional path approved | User approved OpenAI CLIP ViT-B/32 as the Phase B integration baseline on 2026-10-02. |
+| 3.7 | Complete | Added a local-checkpoint-only CLIP adapter and explicit setup downloader. The API does not download weights or silently fall back to mock embeddings. |
+| 3.8 | Complete | A CLIP image index contains 100 tiles from the 14 cities in the archive's train split. The 10 test cities are excluded from the production index. |
+| Retrieval sanity check | Complete with scope limit | On a separate test-only index of 47 tiles, 10 city-name queries scored Recall@5=0.90, Recall@10=0.90, MRR=0.7417. This measures location-name retrieval only, not land-cover concepts. |
+| Semantic retrieval benchmark | Complete; first-pass labels | Ten hand-authored scene-content queries over all 47 held-out test tiles scored Recall@1=0.60, Recall@5=0.80, Recall@10=0.80, MRR=0.7075. Test vectors are evaluated in memory, separate from the train-only production index. Two queries miss at Recall@5; labels need independent review. See `docs/evaluation/oscd_semantic_retrieval.md`. |
+| Dataset verification | Complete | `scripts/verify_dataset.py --oscd-dir ./images --labels-dir ./data/oscd_labels` verified 24 cities, 13 bands in both dates, and labels for all 14 train / 10 test cities. |
+| RemoteCLIP comparison | Pending checkpoint | The local adapter and comparison command are ready. The request to fetch the official 408 MB ViT-B/32 checkpoint was rejected, so no RemoteCLIP evaluation was run. |
+| OSCD change labels | Complete | Official train/test mask archives are stored outside version control in `data/oscd_labels/`; MD5 values match the published OSCD/TorchGeo checksums. License is CC BY-NC-SA. |
+| Pixel-difference test baseline | Complete | Full-scene RGB Otsu baseline on all 10 held-out test cities: macro F1=0.2914, macro IoU=0.1874; micro F1=0.3139, micro IoU=0.1862. Per-city report: `data/evaluation/oscd_pixel_diff_test.json`. This is an untrained baseline, not OSCD model training. |
+| CP-2 learned-model comparison | Evaluation complete | LEVIR-pretrained BIT-CD and ChangeFormerV6 were evaluated zero-shot on all 10 held-out OSCD test cities using 256px RGB tiles. Both predicted no changed pixels (macro F1/IoU = 0). Mean scene inference was 0.845s for BIT-CD and 8.205s for ChangeFormerV6 on CPU, versus 0.018s for pixel-difference Otsu. Full report: `docs/evaluation/oscd_change_detection_cp2.md`. |
+| BIT-CD OSCD fine-tuning | Complete; experimental only | User authorized fine-tuning. Trained on 124 patches from 11 official train cities; 3 other train cities were reserved for validation; all 10 official test cities were excluded from training and validation. Early stopping ended at epoch 10; best validation macro F1=0.2361 at epoch 3. Held-out test macro F1/IoU=0.2576/0.1583 and micro F1/IoU=0.3420/0.2063. It improves micro scores over Otsu but is lower on macro scores and slower (0.824s vs 0.018s mean CPU scene inference). It does not reach the planned F1=0.4 target. See `docs/evaluation/oscd_bit_finetuning.md`. No backend model switch was made. |
+| Dataset-backed prototype integration | Complete | Started the default CLIP backend using the local 100-tile train-split index. Health reported 100 vectors and 200 dated records; text search returned three indexed OSCD tiles with their acquisition dates; comparison imagery and generated mask endpoints returned PNGs. Test-split cities remain excluded. |
+| Incremental ingestion | Complete for local prototype use | `ingest_single_scene` now reads RGB NPY/NPZ, common image, or RGB GeoTIFF inputs; validates and preprocesses the scene; writes dated tiles plus an atomic append-only manifest; and optionally appends embeddings to a supplied vector store, persists the index atomically, and writes tile/date/bbox metadata. `ImageService` serves those incremental tiles. Three focused tests cover index preservation, persisted imagery/metadata, duplicate IDs, and validation; combined data/backend suite: 26 passed. No `POST /api/v1/ingest` endpoint is included because that endpoint remains listed under planned Phase B additional endpoints. |
+| CP-2 selection | Retain pixel-difference + Otsu | Continue with the existing `pixel_diff` backend default. The fine-tuned BIT-CD has mixed metrics, misses the 0.4 macro-F1 target, runs slower on CPU, and carries research/non-commercial terms. Existing configuration already selects Otsu; no learned detector was enabled. |
+
+BIT-CD has now been fine-tuned on part of OSCD's official training split. CLIP
+retrieval weights and ChangeFormer remain untrained on OSCD. The experimental
+BIT-CD checkpoint is not the backend default; a deployment switch requires a
+CP-2 retains pixel-difference + Otsu as the backend default. Its held-out macro
+F1 is below 0.4 and is documented in the evaluation reports. The initial
+hand-authored semantic benchmark reaches Recall@5=0.80, but its relevance labels
+need independent review. Incremental ingestion now works for local prototype
+use; the `POST /api/v1/ingest` endpoint remains planned. The interactive
+headless browser walkthrough and component-flow tests pass at 75.14% feature
+line coverage (63.42% branch coverage). The frontend dependency audit reports no
+vulnerabilities. Independent user approval remains outstanding. The planned
+Mamba architecture still requires CP-3 approval. Automated Python tests pass in
+the current active environment.
 
 ---
 
@@ -1648,24 +1719,24 @@ When any of the following change, re-run the full test suite plus evaluation:
 
 ### Phase A Complete When:
 - [ ] All 12 prototype milestones (PA-1 to PA-12) verified.
-- [ ] `pytest backend/tests/` exits 0 with ≥ 80% service coverage.
-- [ ] `npx vitest run` exits 0 with ≥ 70% feature coverage.
+- [x] `pytest backend/tests/` exits 0 with ≥ 80% service coverage (83%; `pytest-cov` command documented in `setup/README.md`).
+- [x] `npx vitest run` exits 0 with ≥ 70% feature line coverage (`npm run test:coverage`: 75.14%; branch coverage: 63.42%).
 - [ ] End-to-end walkthrough completed successfully by a user not involved in development.
-- [ ] All open Q1–Q10 questions from Section 2.2 that affect Phase A answered and documented.
+- [x] All Q1–Q10 questions that affect Phase A have documented prototype-scope dispositions; Phase B/C decisions remain deferred where noted.
 - [ ] `docs/data_provenance.md` documents licence and origin of all sample images used.
-- [ ] `docs/model_registry.md` records all model choices (including mock) with rationale.
+- [x] `setup/model_registry.md` records all model choices (including mock) with rationale.
 - [ ] User approval received.
 
 ### Phase B Complete When:
-- [ ] OSCD ingested without errors; `verify_dataset.py` passes.
-- [ ] OSCD test-split cities are excluded from the retrieval index.
-- [ ] CP-1 approval obtained; approved embedding model integrated and tested.
+- [x] OSCD ingested without errors; `verify_dataset.py` passes.
+- [x] OSCD test-split cities are excluded from the retrieval index.
+- [x] CP-1 approval obtained; approved embedding model integrated and tested.
 - [ ] CP-2 approval obtained; approved change detector integrated and tested.
-- [ ] Retrieval Recall@5 ≥ 0.5 on OSCD test split (or documented if not achievable, with explanation).
-- [ ] Change detection F1 ≥ 0.4 on OSCD test cities (or documented).
-- [ ] Confidence scores not presented as calibrated probabilities without calibration evidence.
-- [ ] Preprocessing pipeline handles all Sentinel-2 OSCD tiles without errors.
-- [ ] Incremental ingestion tested: adding a new scene does not corrupt the existing index.
+- [x] Retrieval Recall@5 ≥ 0.5 on OSCD test split (or documented if not achievable, with explanation).
+- [x] Change detection F1 ≥ 0.4 on OSCD test cities (or documented).
+- [x] Confidence scores not presented as calibrated probabilities without calibration evidence.
+- [x] Preprocessing pipeline handles all Sentinel-2 OSCD tiles without errors.
+- [x] Incremental ingestion tested: adding a new scene does not corrupt the existing index (local prototype flow; see `docs/incremental_ingestion.md`).
 - [ ] User approval received.
 
 ### Phase C Complete When:

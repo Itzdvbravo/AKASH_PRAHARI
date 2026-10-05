@@ -30,7 +30,7 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, onSelectTab, mockMode
           type="button"
         >
           <span>🛰️</span>
-          <span>Temporal Comparison</span>
+          <span>Temporal Analysis</span>
         </button>
         <button
           className={`nav-tab-btn ${activeTab === 'system' ? 'active' : ''}`}
@@ -45,7 +45,7 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, onSelectTab, mockMode
       <div className="header-meta">
         <div className="status-indicator">
           <span className="status-dot"></span>
-          <span>{mockMode ? 'Mock Data Active' : 'Connected to Core'}</span>
+          <span>{mockMode ? 'Mock Data Active' : 'API Mode'}</span>
         </div>
       </div>
     </header>

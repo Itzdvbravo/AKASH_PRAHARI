@@ -28,11 +28,13 @@ export const AnalystSummaryCard: React.FC<AnalystSummaryCardProps> = ({ summary,
         </div>
 
         <div className="metric-item">
-          <span className="metric-title">Model Confidence</span>
+          <span className="metric-title">Uncalibrated detector score</span>
           <span className="metric-value" style={{ color: 'var(--accent-emerald)' }}>
             {confidencePct}%
           </span>
-          <span className="metric-sub">Method: {summary.confidence.method}</span>
+          <span className="metric-sub" title="This score is not a probability that the detection is correct.">
+            {summary.confidence.method}; not a probability of correctness
+          </span>
         </div>
 
         <div className="metric-item">

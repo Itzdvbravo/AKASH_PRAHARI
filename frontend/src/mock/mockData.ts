@@ -26,21 +26,6 @@ export interface LocationMeta {
 
 export const LOCATIONS: LocationMeta[] = [
   {
-    id: 'kaziranga',
-    label: 'Kaziranga NP',
-    country: 'Assam',
-    coords: { lat: 26.5775, lon: 93.1711 },
-    date1: '2022',
-    date2: '2025',
-    beforeUrl: '/satellite/kaziranga/2022.jpg',
-    afterUrl: '/satellite/kaziranga/2025.jpg',
-    changeType: 'Vegetation → Buildings',
-    changeDesc: 'Dense natural forest vegetation replaced by institutional facilities and residential building complexes. Initial clearing and foundation construction began in early 2024.',
-    changedFraction: 0.091,
-    confidence: 0.91,
-    bbox: { west: 93.15, south: 26.56, east: 93.19, north: 26.59 }
-  },
-  {
     id: 'dubai',
     label: 'Dubai',
     country: 'UAE',
@@ -409,85 +394,6 @@ export const MOCK_HEALTH: HealthResponse = {
   db_tiles: 12450,
 };
 export function getTemporalProgression(locationId: string): TemporalProgressionData {
-  if (locationId === 'kaziranga') {
-    return {
-      locationId: 'kaziranga',
-      locationLabel: 'Kaziranga NP, Assam',
-      country: 'India',
-      timeRange: '2022 \u2192 2025',
-      changeType: 'Vegetation \u2192 Buildings',
-      earliestSupportedChange: '2024',
-      confidence: 0.91,
-      stages: [
-        {
-          id: 'kaziranga-2022',
-          year: '2022',
-          date: '2022-03-24',
-          imageUrl: '/satellite/kaziranga/2022.jpg',
-          title: 'Vegetation (no buildings)',
-          iconType: 'leaf',
-          variant: 'green',
-          sensor: 'Sentinel-2 L2A',
-          cloudCoverPct: 0.8,
-        },
-        {
-          id: 'kaziranga-2024',
-          year: '2024',
-          date: '2024-04-12',
-          imageUrl: '/satellite/kaziranga/2024.jpg',
-          title: 'Buildings appearing',
-          subtitle: '(initial construction)',
-          iconType: 'crane',
-          variant: 'yellow',
-          sensor: 'Sentinel-2 L2A',
-          cloudCoverPct: 1.2,
-        },
-        {
-          id: 'kaziranga-2025',
-          year: '2025',
-          date: '2025-02-18',
-          imageUrl: '/satellite/kaziranga/2025.jpg',
-          title: 'Buildings',
-          subtitle: '(construction completed)',
-          iconType: 'building',
-          variant: 'neutral',
-          sensor: 'Sentinel-2 L2A',
-          cloudCoverPct: 0.4,
-        },
-      ],
-      detectedChanges: {
-        title: 'Detected Changes',
-        subRange: '(2022 vs 2025)',
-        imageUrl: '/satellite/kaziranga/2025.jpg',
-        chipTitle: 'Changed areas',
-        chipSubtitle: '(new buildings)',
-        iconType: 'detection',
-        variant: 'red',
-        polygons: [
-          { points: '48,31 63,36 57,45 48,39', label: 'Institutional Wing' },
-          { points: '57,46 72,44 74,50 64,56 57,51', label: 'Main Complex' },
-          { points: '39,38 49,45 45,50 38,44', label: 'Residential Wing 1' },
-          { points: '43,56 57,64 52,70 43,63', label: 'Residential Wing 2' },
-          { points: '26,42 36,42 36,52 26,52', label: 'Facilities Hub' },
-          { points: '30,51 41,56 37,63 29,58', label: 'Support Block' },
-        ],
-        boundingBoxes: [
-          {
-            x: 95,
-            y: 110,
-            width: 210,
-            height: 190,
-            label: 'Primary Development Zone',
-            confidence: { score: 0.91, method: 'calibrated_ensemble', calibrated: true },
-          },
-        ],
-      },
-      description:
-        'Dense natural forest vegetation replaced by institutional facilities and residential building complexes. Initial clearing and foundation construction began in early 2024.',
-      changedPixelFraction: 0.091,
-    };
-  }
-
   const loc = LOCATIONS.find(l => l.id === locationId) || LOCATIONS[0];
   const year1 = loc.date1.slice(0, 4);
   const year2 = loc.date2.slice(0, 4);
@@ -497,6 +403,12 @@ export function getTemporalProgression(locationId: string): TemporalProgressionD
     locationId: loc.id,
     locationLabel: `${loc.label}, ${loc.country}`,
     country: loc.country,
+    coordinates: { latitude: loc.coords.lat, longitude: loc.coords.lon },
+    footprint: loc.bbox,
+    spatialReference: 'WGS 84 (EPSG:4326)',
+    rasterFormat: 'PNG visual previews',
+    rasterMetadataStatus: 'No GeoTIFF/COG attached; raster CRS, transform, pixel size, dimensions, bands, NoData and compression are unavailable',
+    source: 'Curated Sentinel-2 L2A example metadata',
     timeRange: `${year1} \u2192 ${year2}`,
     changeType: loc.changeType,
     earliestSupportedChange: midYear,

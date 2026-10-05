@@ -48,6 +48,42 @@ class OSCDMetadataExtractor:
         self.dataset_dir = Path(dataset_dir) if dataset_dir else None
 
     def get_geo_bbox(self, city_name: str) -> Dict[str, float]:
+        if self.dataset_dir is not None:
+            city_key = city_name.lower()
+            for geojson_path in (
+                self.dataset_dir / city_key / f"{city_key}.geojson",
+                self.dataset_dir / f"{city_key}.geojson",
+            ):
+                if not geojson_path.is_file():
+                    continue
+                try:
+                    payload = json.loads(geojson_path.read_text(encoding="utf-8"))
+                    points = []
+
+                    def collect_coordinates(value):
+                        if (
+                            isinstance(value, list)
+                            and len(value) >= 2
+                            and isinstance(value[0], (int, float))
+                            and isinstance(value[1], (int, float))
+                        ):
+                            points.append((float(value[0]), float(value[1])))
+                        elif isinstance(value, list):
+                            for child in value:
+                                collect_coordinates(child)
+
+                    for feature in payload.get("features", []):
+                        geometry = feature.get("geometry") or {}
+                        collect_coordinates(geometry.get("coordinates", []))
+                    if points:
+                        xs, ys = zip(*points)
+                        return {
+                            "west": min(xs), "south": min(ys),
+                            "east": max(xs), "north": max(ys),
+                        }
+                except (OSError, ValueError, TypeError):
+                    pass
+
         city_key = city_name.lower().replace(" ", "").replace("_", "-")
         return OSCD_CITY_COORDINATES.get(
             city_key,
@@ -60,7 +96,20 @@ class OSCDMetadataExtractor:
         if dates_file.exists():
             try:
                 with open(dates_file, "r", encoding="utf-8") as f:
-                    dates = [line.strip() for line in f if line.strip()]
+                    dates = []
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        # OSCD sidecars use `date_1: YYYYMMDD` / `date_2: YYYYMMDD`.
+                        raw_date = line.split(":", 1)[-1].strip()
+                        digits = "".join(ch for ch in raw_date if ch.isdigit())
+                        if len(digits) == 8:
+                            dates.append(f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}")
+                        elif len(digits) == 4:
+                            dates.append(f"{digits[:4]}-01-01")
+                        else:
+                            dates.append(raw_date)
                     if dates:
                         return dates
             except Exception:

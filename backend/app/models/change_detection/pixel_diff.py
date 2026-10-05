@@ -3,6 +3,20 @@ import numpy as np
 from app.models.interfaces import ChangeDetector, ChangeDetectionOutput
 
 try:
+    from scipy.ndimage import binary_dilation, generate_binary_structure
+    HAS_SCIPY_MORPH = True
+except ImportError:
+    HAS_SCIPY_MORPH = False
+
+import sys
+from pathlib import Path
+_dh_root = Path(__file__).resolve().parents[4] / "data-handling"
+if str(_dh_root) not in sys.path:
+    sys.path.insert(0, str(_dh_root))
+from preprocessing.cloud_masking import detect_clouds_optical
+
+
+try:
     from skimage.filters import threshold_otsu
     HAS_SKIMAGE = True
 except ImportError:
@@ -54,6 +68,22 @@ class PixelDiffChangeDetector(ChangeDetector):
 
         binary_mask = (diff_map >= thresh).astype(np.uint8)
 
+        # --- Cloud suppression ---
+        # Detect clouds in both images and exclude those pixels from the
+        # change mask to avoid false positives from transient atmospheric
+        # features (clouds, haze, shadows).
+        cloud_before = detect_clouds_optical(b) if b.ndim == 3 and b.shape[-1] >= 3 else np.zeros_like(binary_mask)
+        cloud_after = detect_clouds_optical(a) if a.ndim == 3 and a.shape[-1] >= 3 else np.zeros_like(binary_mask)
+        cloud_union = ((cloud_before > 0) | (cloud_after > 0)).astype(np.uint8)
+
+        # Dilate cloud mask slightly to catch edges / thin haze around clouds
+        if HAS_SCIPY_MORPH and np.any(cloud_union):
+            struct = generate_binary_structure(2, 2)
+            cloud_union = binary_dilation(cloud_union, structure=struct, iterations=3).astype(np.uint8)
+
+        binary_mask = binary_mask & (~cloud_union.astype(bool)).astype(np.uint8)
+
+
         total_px = float(binary_mask.size)
         changed_px = float(np.count_nonzero(binary_mask))
         changed_fraction = changed_px / max(total_px, 1.0)
@@ -71,5 +101,6 @@ class PixelDiffChangeDetector(ChangeDetector):
                 "threshold_applied": round(thresh, 4),
                 "diff_map_mean": round(float(np.mean(diff_map)), 4),
                 "diff_map_max": round(float(np.max(diff_map)), 4),
+                "cloud_pixels_suppressed": int(np.count_nonzero(cloud_union)),
             }
         )

@@ -12,14 +12,15 @@ if str(data_handling_dir) not in sys.path:
 from interfaces.dataset_adapter import DatasetAdapter, TileMetadata
 from adapters.oscd.oscd_loader import OSCDLoader
 from adapters.oscd.oscd_metadata import OSCDMetadataExtractor, OSCD_CITY_COORDINATES
+from geospatial.tile_id import parse_tile_id
 
 
 class OSCDAdapter(DatasetAdapter):
     """Production DatasetAdapter for the Onera Satellite Change Detection (OSCD) dataset."""
 
-    def __init__(self, oscd_root_dir: str):
+    def __init__(self, oscd_root_dir: str, labels_root_dir: Optional[str] = None):
         self.oscd_root = Path(oscd_root_dir)
-        self.loader = OSCDLoader(self.oscd_root)
+        self.loader = OSCDLoader(self.oscd_root, Path(labels_root_dir) if labels_root_dir else None)
         self.metadata_extractor = OSCDMetadataExtractor(self.oscd_root)
         self._cities_cache: Optional[Dict[str, Path]] = None
 
@@ -43,10 +44,9 @@ class OSCDAdapter(DatasetAdapter):
         return ["2016-01-01", "2018-01-01"]
 
     def get_tile_metadata(self, tile_id: str) -> TileMetadata:
-        # Expected format: {location_id}_{row:04d}_{col:04d}_{sensor}
-        parts = tile_id.split("_")
-        loc_id = parts[0] if parts else "unknown"
-        sensor = parts[-1] if len(parts) > 1 else "sentinel-2"
+        parts = parse_tile_id(tile_id)
+        loc_id = parts["location_id"]
+        sensor = parts["sensor"]
 
         geo_bbox = self.metadata_extractor.get_geo_bbox(loc_id)
         dates = self.list_dates(loc_id)
@@ -86,10 +86,10 @@ class OSCDAdapter(DatasetAdapter):
         full_scene = self.loader.load_band_composite(city_dir, time_index=time_index, bands=bands)
 
         # Handle tiling if tile_id specifies row/col
-        parts = tile_id.split("_")
-        if len(parts) >= 4 and parts[1].isdigit() and parts[2].isdigit():
-            row = int(parts[1])
-            col = int(parts[2])
+        parts = parse_tile_id(tile_id)
+        if parts["row"].isdigit() and parts["col"].isdigit():
+            row = int(parts["row"])
+            col = int(parts["col"])
             tile_size = 256
             r_start = row * tile_size
             c_start = col * tile_size

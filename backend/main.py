@@ -21,6 +21,7 @@ from app.db.models import TileRecord
 from app.db.repositories.tile_repo import TileRepository
 from app.vector_store.faiss_store import FaissVectorStore
 from app.models.embedding.mock_embedding import MockEmbeddingModel
+from app.models.embedding.clip_vit_b32 import CLIPViTB32EmbeddingModel
 from app.models.embedding.remote_clip import RemoteCLIPEmbeddingModel
 from app.models.change_detection.pixel_diff import PixelDiffChangeDetector
 from app.models.change_detection.bit_cd import BITChangeDetector
@@ -29,24 +30,30 @@ from app.services.image_service import ImageService
 from app.services.retrieval_service import RetrievalService
 from app.services.comparison_service import ComparisonService
 from app.services.change_detection_service import ChangeDetectionService
+from app.services.temporal_state_store import TemporalStateStore
 from app.services.summary_service import SummaryService
 from app.services.query_orchestrator import QueryOrchestrator
+from app.services.review_service import ReviewService
 from adapters.oscd.oscd_metadata import OSCD_CITY_COORDINATES
 
 logger = get_logger("terraeyes.main")
 
+PROTOTYPE_EXTRA_CITIES = {
+    "norcia": {"west": 13.08, "south": 42.78, "east": 13.11, "north": 42.81},
+}
+
 
 def seed_initial_catalog(tile_repo: TileRepository, vector_store: FaissVectorStore, embedding_model) -> None:
-    """Pre-seeds standard OSCD geographic catalog so search works immediately."""
-    if tile_repo.count_tiles() > 0 and vector_store.size > 0:
-        return
-
-    logger.info("seeding_initial_catalog", cities_count=len(OSCD_CITY_COORDINATES))
+    """Adds any missing demo catalog entries without duplicating indexed tiles."""
+    cities = {**OSCD_CITY_COORDINATES, **PROTOTYPE_EXTRA_CITIES}
+    logger.info("seeding_initial_catalog", cities_count=len(cities))
     vectors_to_add = []
     ids_to_add = []
 
-    for city, bbox in OSCD_CITY_COORDINATES.items():
+    for city, bbox in cities.items():
         tile_id = f"{city}_0001_0001_sentinel-2"
+        if tile_repo.get_any_by_id(tile_id) is not None:
+            continue
         dates = ["2016-03-15", "2018-06-20"]
         for dt in dates:
             rec = TileRecord(
@@ -84,31 +91,79 @@ async def lifespan(app: FastAPI):
     db_mgr.init_db()
     tile_repo = TileRepository(db_mgr)
 
-    # 2. Initialize Vector Store
-    vector_store = FaissVectorStore(dim=settings.TERRAEYES_EMBEDDING_DIM)
-    vector_store.load(settings.TERRAEYES_FAISS_INDEX_PATH)
-
-    # 3. Model Factory
-    if settings.TERRAEYES_EMBEDDING_MODEL == "remote_clip":
-        embedding_model = RemoteCLIPEmbeddingModel(dim=settings.TERRAEYES_EMBEDDING_DIM)
-    else:
+    # 2. Model Factory
+    if settings.TERRAEYES_EMBEDDING_MODEL == "clip_vit_b32":
+        embedding_model = CLIPViTB32EmbeddingModel(
+            checkpoint_path=settings.TERRAEYES_CLIP_CHECKPOINT_PATH
+        )
+    elif settings.TERRAEYES_EMBEDDING_MODEL == "remote_clip":
+        embedding_model = RemoteCLIPEmbeddingModel(
+            checkpoint_path=settings.TERRAEYES_REMOTECLIP_CHECKPOINT_PATH
+        )
+    elif settings.TERRAEYES_EMBEDDING_MODEL == "mock":
         embedding_model = MockEmbeddingModel(dim=settings.TERRAEYES_EMBEDDING_DIM)
+    else:
+        raise ValueError(
+            f"Unsupported embedding model: {settings.TERRAEYES_EMBEDDING_MODEL}"
+        )
 
+    # 3. Load an index only when its model fingerprint matches the configured
+    # encoder. CLIP and mock vectors share a dimension but are not compatible.
+    vector_store = FaissVectorStore(dim=embedding_model.embedding_dim)
+    index_metadata_path = Path(f"{settings.TERRAEYES_FAISS_INDEX_PATH}.meta.json")
+    index_metadata = None
+    if index_metadata_path.is_file():
+        try:
+            index_metadata = json.loads(index_metadata_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            logger.warning("vector_index_metadata_invalid", path=str(index_metadata_path))
+
+    index_compatible = bool(
+        index_metadata
+        and index_metadata.get("model") == settings.TERRAEYES_EMBEDDING_MODEL
+        and index_metadata.get("embedding_dim") == embedding_model.embedding_dim
+    )
+    persisted_index_metadata = dict(index_metadata) if index_compatible else {}
+    if index_compatible:
+        vector_store.load(settings.TERRAEYES_FAISS_INDEX_PATH)
+    elif settings.TERRAEYES_EMBEDDING_MODEL == "mock" and index_metadata is None:
+        # Read indexes produced by the original Phase A prototype.
+        vector_store.load(settings.TERRAEYES_FAISS_INDEX_PATH)
+    elif settings.TERRAEYES_EMBEDDING_MODEL != "mock":
+        logger.warning(
+            "vector_index_not_loaded",
+            configured_model=settings.TERRAEYES_EMBEDDING_MODEL,
+            metadata_path=str(index_metadata_path),
+        )
+
+    if settings.TERRAEYES_EMBEDDING_MODEL == "clip_vit_b32" and vector_store.size == 0:
+        raise RuntimeError(
+            "No CLIP-compatible image index is available. Run scripts/ingest_oscd.py "
+            "and scripts/build_index.py before starting the API."
+        )
+
+    temporal_state_store = None
     if settings.TERRAEYES_CHANGE_DETECTOR == "bit_cd":
         change_detector = BITChangeDetector()
     elif settings.TERRAEYES_CHANGE_DETECTOR == "mamba_cd":
-        change_detector = MambaChangeDetector()
+        change_detector = MambaChangeDetector(
+            weights_path=settings.TERRAEYES_MAMBA_CHECKPOINT_PATH,
+        )
+        temporal_state_store = TemporalStateStore(settings.TERRAEYES_TEMPORAL_STORE_PATH)
     else:
         change_detector = PixelDiffChangeDetector()
 
-    # 4. Pre-seed catalog if empty
-    seed_initial_catalog(tile_repo, vector_store, embedding_model)
+    # 4. Keep the synthetic catalog confined to prototype mode. Phase B uses
+    # the train-only image index built from the local OSCD archive.
+    if settings.TERRAEYES_EMBEDDING_MODEL == "mock":
+        seed_initial_catalog(tile_repo, vector_store, embedding_model)
 
     # 5. Instantiate Services
     image_service = ImageService(
         tile_repo=tile_repo,
         oscd_dir=settings.TERRAEYES_OSCD_DIR,
-        masks_cache_dir=str(Path(settings.TERRAEYES_DATA_DIR) / "masks")
+        masks_cache_dir=str(Path(settings.TERRAEYES_DATA_DIR) / "masks"),
+        incremental_tiles_dir=str(Path(settings.TERRAEYES_DATA_DIR) / "incremental_tiles"),
     )
     retrieval_service = RetrievalService(
         embedding_model=embedding_model,
@@ -117,12 +172,15 @@ async def lifespan(app: FastAPI):
     )
     comparison_service = ComparisonService(image_service=image_service)
     summary_service = SummaryService()
+    review_service = ReviewService(db_mgr)
     cd_service = ChangeDetectionService(
         change_detector=change_detector,
         image_service=image_service,
         comparison_service=comparison_service,
         summary_service=summary_service,
-        min_change_area_px=settings.TERRAEYES_MIN_CHANGE_AREA_PX
+        min_change_area_px=settings.TERRAEYES_MIN_CHANGE_AREA_PX,
+        temporal_state_store=temporal_state_store,
+        review_service=review_service,
     )
     query_orchestrator = QueryOrchestrator(retrieval_service=retrieval_service)
 
@@ -139,14 +197,25 @@ async def lifespan(app: FastAPI):
     app.state.retrieval_service = retrieval_service
     app.state.comparison_service = comparison_service
     app.state.change_detection_service = cd_service
+    app.state.temporal_state_store = temporal_state_store
     app.state.summary_service = summary_service
     app.state.query_orchestrator = query_orchestrator
+    app.state.review_service = review_service
 
     yield
 
     # Shutdown
     try:
         vector_store.save(settings.TERRAEYES_FAISS_INDEX_PATH)
+        persisted_index_metadata.update({
+            "model": settings.TERRAEYES_EMBEDDING_MODEL,
+            "embedding_dim": embedding_model.embedding_dim,
+            "tile_count": vector_store.size,
+        })
+        index_metadata_path.parent.mkdir(parents=True, exist_ok=True)
+        index_metadata_path.write_text(
+            json.dumps(persisted_index_metadata, indent=2), encoding="utf-8"
+        )
         logger.info("shutdown_complete")
     except Exception as e:
         logger.error("shutdown_error", error=str(e))

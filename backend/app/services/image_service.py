@@ -17,20 +17,34 @@ if str(data_handling_dir) not in sys.path:
 
 from adapters.oscd.oscd_adapter import OSCDAdapter
 from adapters.oscd.oscd_metadata import OSCD_CITY_COORDINATES
+from geospatial.tile_id import parse_tile_id
 
 
 class ImageService:
     """Manages satellite tile pixel retrieval, band rendering, and mask caching."""
 
-    def __init__(self, tile_repo: TileRepository, oscd_dir: str, masks_cache_dir: str = "./data/masks"):
+    def __init__(
+        self,
+        tile_repo: TileRepository,
+        oscd_dir: str,
+        masks_cache_dir: str = "./data/masks",
+        incremental_tiles_dir: str = "./data/incremental_tiles",
+    ):
         self.tile_repo = tile_repo
         self.oscd_adapter = OSCDAdapter(oscd_dir)
         self.masks_dir = Path(masks_cache_dir)
         self.masks_dir.mkdir(parents=True, exist_ok=True)
+        self.incremental_tiles_dir = Path(incremental_tiles_dir)
 
     def get_tile_array(self, tile_id: str, date: str) -> np.ndarray:
-        parts = tile_id.split("_")
-        loc_id = parts[0] if parts else "paris"
+        loc_id = parse_tile_id(tile_id)["location_id"] or "paris"
+
+        incremental_path = (
+            self.incremental_tiles_dir / loc_id / f"{tile_id}_{date}.npz"
+        )
+        if incremental_path.is_file():
+            with np.load(incremental_path, allow_pickle=False) as archive:
+                return np.asarray(archive["image"], dtype=np.float32)
 
         try:
             return self.oscd_adapter.load_tile_array(loc_id, date, tile_id)
@@ -76,6 +90,24 @@ class ImageService:
 
         with open(filepath, "rb") as f:
             return f.read()
+
+    def get_mask_overlay_bytes(self, filename: str) -> bytes:
+        """Render the stored binary mask as transparent red pixels for the UI."""
+        filepath = self.masks_dir / filename
+        if filepath.exists():
+            with Image.open(filepath) as source:
+                mask = np.asarray(source.convert("L"), dtype=np.uint8)
+        else:
+            mask = np.zeros((256, 256), dtype=np.uint8)
+
+        rgba = np.zeros((*mask.shape, 4), dtype=np.uint8)
+        rgba[..., 0] = 255
+        rgba[..., 1] = 0
+        rgba[..., 2] = 0
+        rgba[..., 3] = np.where(mask > 0, 245, 0).astype(np.uint8)
+        buf = io.BytesIO()
+        Image.fromarray(rgba, mode="RGBA").save(buf, format="PNG")
+        return buf.getvalue()
 
     def get_available_dates(self, location_id: str) -> List[str]:
         dates = self.tile_repo.list_dates_for_location(location_id)

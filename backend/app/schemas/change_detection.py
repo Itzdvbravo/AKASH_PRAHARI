@@ -22,6 +22,11 @@ class ChangeDetectionRequest(BaseModel):
     tile_id: Optional[str] = None
     date_before: Optional[str] = None
     date_after: Optional[str] = None
+    temporal_dates: Optional[List[str]] = Field(
+        default=None,
+        description="Optional ordered acquisitions to process for an SSM change comparison",
+        min_length=2,
+    )
 
 
 class ChangeDetectionResponse(BaseModel):

@@ -18,8 +18,9 @@ class OSCDLoader:
     RGB_BANDS = ["B04", "B03", "B02"]  # Red, Green, Blue
     INFRARED_BANDS = ["B08", "B04", "B03"]  # NIR, Red, Green
 
-    def __init__(self, oscd_root_dir: Path):
+    def __init__(self, oscd_root_dir: Path, labels_root_dir: Optional[Path] = None):
         self.oscd_root = Path(oscd_root_dir)
+        self.labels_root = Path(labels_root_dir) if labels_root_dir else self.oscd_root
 
     def find_city_directories(self) -> Dict[str, Path]:
         """Search recursively for city folders in OSCD dataset."""
@@ -121,14 +122,18 @@ class OSCDLoader:
             f"**/{city_name}/*mask*.png",
         ]
 
-        for pat in patterns:
-            matches = list(self.oscd_root.glob(pat))
-            if matches:
-                mask_file = matches[0]
-                with Image.open(mask_file) as img:
-                    mask = np.array(img.convert("L"))
-                    # In OSCD, 1 or 255 signifies change, 2 or 0 signifies no change
-                    binary_mask = (mask == 255) | (mask == 1)
-                    return binary_mask.astype(np.uint8)
+        for search_root in (self.labels_root, self.oscd_root):
+            for pat in patterns:
+                matches = list(search_root.glob(pat))
+                if matches:
+                    mask_file = matches[0]
+                    if HAS_RASTERIO and mask_file.suffix.lower() in {".tif", ".tiff"}:
+                        with rasterio.open(mask_file) as src:
+                            mask = src.read(1)
+                    else:
+                        with Image.open(mask_file) as img:
+                            mask = np.array(img.convert("L"))
+                    # OSCD PNG labels use 255 for change; TIFF labels use 1.
+                    return ((mask == 255) | (mask == 1)).astype(np.uint8)
 
         return None

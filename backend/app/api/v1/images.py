@@ -43,7 +43,10 @@ async def get_tile_image(
 
 
 @router.get("/masks/{mask_filename}")
-async def get_mask_image(mask_filename: str, request: Request):
+async def get_mask_image(mask_filename: str, request: Request, overlay: bool = Query(False)):
     image_service = request.app.state.image_service
-    mask_bytes = image_service.get_mask_bytes(mask_filename)
+    mask_bytes = (
+        image_service.get_mask_overlay_bytes(mask_filename)
+        if overlay else image_service.get_mask_bytes(mask_filename)
+    )
     return Response(content=mask_bytes, media_type="image/png")

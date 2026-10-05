@@ -1,75 +1,79 @@
-"""RemoteCLIP / OpenCLIP embedding model adapter conforming to EmbeddingModel ABC."""
+"""Offline RemoteCLIP ViT-B/32 adapter using the authors' OpenCLIP checkpoint."""
 from pathlib import Path
-from typing import Optional
-import numpy as np
-from app.models.interfaces import EmbeddingModel
+from typing import Any
 
-try:
-    import torch
-    import open_clip
-    HAS_OPENCLIP = True
-except ImportError:
-    HAS_OPENCLIP = False
+import numpy as np
+
+from app.models.interfaces import EmbeddingModel
 
 
 class RemoteCLIPEmbeddingModel(EmbeddingModel):
-    """
-    RemoteCLIP adapter for satellite imagery and natural language queries.
-    Fallback to deterministic projection if torch/open_clip not installed.
-    """
+    """Loads remote-sensing-specific weights from a local checkpoint only."""
 
-    def __init__(self, model_name: str = "ViT-B-32", pretrained: str = "laion2b_s34b_b79k", dim: int = 512):
-        self._dim = dim
-        self._device = "cuda" if HAS_OPENCLIP and torch.cuda.is_available() else "cpu"
-        self.model = None
-        self.preprocess = None
-        self.tokenizer = None
+    def __init__(self, checkpoint_path: str, device: str | None = None):
+        checkpoint = Path(checkpoint_path).expanduser()
+        if not checkpoint.is_file():
+            raise FileNotFoundError(
+                f"RemoteCLIP checkpoint not found at {checkpoint}. "
+                "Run scripts/download_models.py before starting the API."
+            )
+        try:
+            import open_clip
+            import torch
+        except ImportError as exc:
+            raise RuntimeError(
+                "RemoteCLIP requires torch and open_clip_torch. "
+                "Install the project requirements before selecting this model."
+            ) from exc
 
-        if HAS_OPENCLIP:
-            try:
-                self.model, _, self.preprocess = open_clip.create_model_and_transforms(
-                    model_name, pretrained=pretrained, device=self._device
-                )
-                self.tokenizer = open_clip.get_tokenizer(model_name)
-                self.model.eval()
-            except Exception:
-                self.model = None
+        self._torch = torch
+        self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.model, _, self.preprocess = open_clip.create_model_and_transforms(
+            "ViT-B-32", pretrained=None, device=self._device
+        )
+        state_dict = torch.load(
+            checkpoint, map_location="cpu", weights_only=True
+        )
+        if isinstance(state_dict, dict) and "state_dict" in state_dict:
+            state_dict = state_dict["state_dict"]
+        self.model.load_state_dict(state_dict, strict=True)
+        self.tokenizer = open_clip.get_tokenizer("ViT-B-32")
+        self.model.eval()
+        self._dim = int(self.model.text_projection.shape[-1])
+        if self._dim != 512:
+            raise ValueError(f"Expected RemoteCLIP ViT-B/32 dimension 512; got {self._dim}")
 
     @property
     def embedding_dim(self) -> int:
         return self._dim
 
-    def encode_text(self, text: str) -> np.ndarray:
-        if self.model is not None and self.tokenizer is not None:
-            with torch.no_grad():
-                tokens = self.tokenizer([text]).to(self._device)
-                features = self.model.encode_text(tokens)
-                features /= features.norm(dim=-1, keepdim=True)
-                return features.cpu().numpy()[0].astype(np.float32)
+    def _normalize(self, features: Any) -> np.ndarray:
+        features = features / features.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+        result = features.detach().float().cpu().numpy()[0].astype(np.float32)
+        if result.shape != (self._dim,):
+            raise ValueError(f"Unexpected RemoteCLIP embedding shape: {result.shape}")
+        return result
 
-        # Fallback projection
-        import hashlib
-        digest = hashlib.sha256(text.strip().lower().encode("utf-8")).hexdigest()
-        rng = np.random.RandomState(int(digest[:8], 16))
-        vec = rng.randn(self._dim).astype(np.float32)
-        return vec / np.linalg.norm(vec)
+    def encode_text(self, text: str) -> np.ndarray:
+        tokens = self.tokenizer([text]).to(self._device)
+        with self._torch.inference_mode():
+            return self._normalize(self.model.encode_text(tokens))
 
     def encode_image(self, image: np.ndarray) -> np.ndarray:
-        if self.model is not None and self.preprocess is not None:
-            from PIL import Image
-            with torch.no_grad():
-                if image.max() <= 1.0:
-                    img_u8 = (image * 255.0).astype(np.uint8)
-                else:
-                    img_u8 = image.astype(np.uint8)
-                pil_img = Image.fromarray(img_u8[..., :3])
-                tensor = self.preprocess(pil_img).unsqueeze(0).to(self._device)
-                features = self.model.encode_image(tensor)
-                features /= features.norm(dim=-1, keepdim=True)
-                return features.cpu().numpy()[0].astype(np.float32)
+        from PIL import Image
 
-        # Fallback projection
-        mean_val = float(np.mean(image))
-        rng = np.random.RandomState(int(abs(mean_val * 1000000)) % (2**31 - 1))
-        vec = rng.randn(self._dim).astype(np.float32)
-        return vec / np.linalg.norm(vec)
+        pixels = np.asarray(image)
+        if pixels.ndim == 2:
+            pixels = np.repeat(pixels[..., None], 3, axis=-1)
+        if pixels.ndim != 3 or pixels.shape[-1] < 3:
+            raise ValueError("RemoteCLIP image input must have shape (height, width, >=3)")
+        pixels = np.nan_to_num(pixels[..., :3], nan=0.0, posinf=1.0, neginf=0.0)
+        if np.issubdtype(pixels.dtype, np.integer) and pixels.max(initial=0) > 255:
+            upper = np.percentile(pixels, 98, axis=(0, 1), keepdims=True)
+            pixels = pixels.astype(np.float32) / np.maximum(upper, 1.0) * 255.0
+        elif pixels.max(initial=0) <= 1.0:
+            pixels = pixels.astype(np.float32) * 255.0
+        pil_image = Image.fromarray(np.clip(pixels, 0, 255).astype(np.uint8), mode="RGB")
+        tensor = self.preprocess(pil_image).unsqueeze(0).to(self._device)
+        with self._torch.inference_mode():
+            return self._normalize(self.model.encode_image(tensor))

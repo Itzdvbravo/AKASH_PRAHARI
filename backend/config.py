@@ -3,6 +3,8 @@ from pathlib import Path
 from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
 
 class Settings(BaseSettings):
     # Environment & Server
@@ -17,23 +19,45 @@ class Settings(BaseSettings):
     TERRAEYES_TEMPORAL_STORE_PATH: str = "./data/temporal_states.h5"
     TERRAEYES_MODELS_DIR: str = "./models"
     TERRAEYES_DATA_DIR: str = "./data"
-    TERRAEYES_OSCD_DIR: str = "./data/oscd"
+    TERRAEYES_OSCD_DIR: str = "./images"
 
     # Model Selection
-    TERRAEYES_EMBEDDING_MODEL: str = "mock"  # mock | remote_clip | georscclip
+    TERRAEYES_EMBEDDING_MODEL: str = "clip_vit_b32"  # mock | clip_vit_b32 | remote_clip
     TERRAEYES_CHANGE_DETECTOR: str = "pixel_diff"  # pixel_diff | bit_cd | mamba_cd
     TERRAEYES_TILE_SIZE: int = 256
     TERRAEYES_EMBEDDING_DIM: int = 512
+    TERRAEYES_CLIP_CHECKPOINT_PATH: str = "./models/clip_vit_b32.pt"
+    TERRAEYES_REMOTECLIP_CHECKPOINT_PATH: str = "./models/remoteclip_vit_b32.pt"
+    TERRAEYES_MAMBA_CHECKPOINT_PATH: str = "./models/change_detection_candidates/mamba_oscd_best.pt"
 
     # Postprocessing
     TERRAEYES_MIN_CHANGE_AREA_PX: int = 25
     TERRAEYES_MASK_THRESHOLD: float = 0.25
 
     model_config = SettingsConfigDict(
-        env_file=(".env", ".env.local"),
+        env_file=(PROJECT_ROOT / ".env", PROJECT_ROOT / ".env.local"),
         env_file_encoding="utf-8",
         extra="ignore"
     )
+
+    def model_post_init(self, __context) -> None:
+        """Anchor configured filesystem paths to the repo, not the shell cwd."""
+        path_fields = (
+            "TERRAEYES_DB_PATH",
+            "TERRAEYES_FAISS_INDEX_PATH",
+            "TERRAEYES_TEMPORAL_STORE_PATH",
+            "TERRAEYES_MODELS_DIR",
+            "TERRAEYES_DATA_DIR",
+            "TERRAEYES_OSCD_DIR",
+            "TERRAEYES_CLIP_CHECKPOINT_PATH",
+            "TERRAEYES_REMOTECLIP_CHECKPOINT_PATH",
+            "TERRAEYES_MAMBA_CHECKPOINT_PATH",
+        )
+        for field in path_fields:
+            path = Path(getattr(self, field)).expanduser()
+            if not path.is_absolute():
+                path = PROJECT_ROOT / path
+            object.__setattr__(self, field, str(path.resolve()))
 
     def ensure_directories(self) -> None:
         """Create configured data and model directories if they do not exist."""

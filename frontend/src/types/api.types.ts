@@ -158,6 +158,12 @@ export interface TemporalProgressionData {
   locationId: string;
   locationLabel: string;
   country: string;
+  coordinates: { latitude: number; longitude: number };
+  footprint: { west: number; south: number; east: number; north: number };
+  spatialReference: string;
+  rasterFormat: string;
+  rasterMetadataStatus: string;
+  source: string;
   timeRange: string;
   changeType: string;
   earliestSupportedChange: string;

@@ -36,6 +36,29 @@ CREATE TABLE IF NOT EXISTS temporal_states (
     updated_at TEXT NOT NULL,
     PRIMARY KEY (tile_id, date)
 );
+
+CREATE TABLE IF NOT EXISTS detection_candidates (
+    job_id TEXT PRIMARY KEY,
+    tile_id TEXT NOT NULL,
+    location_id TEXT NOT NULL,
+    date_before TEXT NOT NULL,
+    date_after TEXT NOT NULL,
+    candidate_json TEXT NOT NULL,
+    provenance_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS analyst_reviews (
+    review_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL,
+    decision TEXT NOT NULL CHECK(decision IN ('confirmed', 'rejected')),
+    comment TEXT NOT NULL DEFAULT '',
+    reviewer TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(job_id) REFERENCES detection_candidates(job_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_reviews_job ON analyst_reviews(job_id, review_id);
 """
 
 

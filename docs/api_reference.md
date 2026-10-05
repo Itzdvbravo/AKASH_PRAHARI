@@ -12,6 +12,11 @@ Base URL: `/api/v1`
 | GET | `/images/{location_id}/dates` | List available temporal dates for location | Prototype |
 | POST | `/comparison` | Initiate bi-temporal image pair comparison | Prototype |
 | POST | `/change-detection` | Run change detection analysis on image pair | Prototype |
+| GET | `/similar-sites/{tile_id}` | Find cross-location embedding neighbors for discovery | Prototype |
+| GET | `/review-queue` | List persisted change candidates with analyst decisions | Prototype |
+| GET | `/review-queue/{job_id}` | Read a candidate and its review history | Prototype |
+| POST | `/review-queue/{job_id}/reviews` | Append a confirm/reject decision to the audit trail | Prototype |
+| GET | `/review-queue/export.geojson` | Export candidates, review history, and source provenance | Prototype |
 | GET | `/masks/{mask_filename}` | Fetch binary change mask overlay PNG | Prototype |
 
 ---
@@ -31,6 +36,27 @@ Returns runtime system status and active model configuration.
 }
 ```
 
+## Analyst review and discovery
+
+Every successful change-detection run is persisted to the review queue with its
+tile/date/sensor, CRS, resolution, bounds, detector, mask URL, and detection
+payload. `GET /review-queue?limit=100` lists candidates; `GET
+/review-queue/{job_id}` returns a candidate and its review history. Append
+feedback with `POST /review-queue/{job_id}/reviews`:
+
+```json
+{"decision": "confirmed", "comment": "Expansion visible in source pair", "reviewer": "analyst-1"}
+```
+
+The decision may be `confirmed` or `rejected`; reviews are append-only. They
+are retained for audit but are not currently used to train or rerank results.
+`GET /review-queue/export.geojson` exports WGS84 bounding-box features with
+detection, processing provenance, and all review decisions.
+
+`GET /similar-sites/{tile_id}?top_k=10` embeds the selected tile and returns
+nearest indexed tiles from distinct locations. This is embedding-neighbor
+discovery; it does not claim a separately trained site-clustering model.
+
 ---
 
 ## 2. POST `/search`
@@ -46,11 +72,16 @@ Performs semantic retrieval matching text or image query against indexed satelli
     "location": "paris",
     "date_from": "2018-01-01",
     "date_to": "2021-12-31",
-    "sensor": "sentinel-2"
+    "sensor": "sentinel-2",
+    "area_of_interest": {"west": 2.0, "south": 48.0, "east": 3.0, "north": 49.0}
   },
   "top_k": 10
 }
 ```
+
+`date_from`, `date_to`, and `area_of_interest` are applied to the catalogued
+observation represented by each embedding. The AOI is a WGS84 bounding box and
+retains tiles whose bounds intersect it.
 
 ### Response 200 OK
 ```json
@@ -141,9 +172,16 @@ Executes change detection algorithm on registered bi-temporal image pair and gen
   "location_id": "paris",
   "tile_id": "paris_0001_0001_sentinel-2",
   "date_before": "2018-03-10",
-  "date_after": "2020-06-15"
+  "date_after": "2020-06-15",
+  "temporal_dates": ["2018-03-10", "2019-02-20", "2020-06-15"]
 }
 ```
+
+`temporal_dates` is optional and applies to the `mamba_cd` detector. It must be
+unique, sorted ascending, and include both comparison endpoints. If omitted,
+Mamba processes all dates recorded for the tile between `date_before` and
+`date_after`, then persists its per-date state in HDF5. Pairwise baselines ignore
+this field. OSCD currently supplies only two dates per scene.
 
 ### Response 200 OK
 ```json
@@ -169,8 +207,8 @@ Executes change detection algorithm on registered bi-temporal image pair and gen
     "location": "Paris, France",
     "date_before": "2018-03-10",
     "date_after": "2020-06-15",
-    "change_type": "land_cover_modification",
-    "earliest_detectable_change": "2018-03-10",
+    "change_type": "binary_surface_change",
+    "earliest_detectable_change": null,
     "confidence": {
       "score": 0.82,
       "method": "pixel_fraction",

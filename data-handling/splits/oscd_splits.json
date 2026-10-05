@@ -1,33 +1,32 @@
 {
-  "description": "Standard geographic splits for OSCD dataset (14 train / 5 val / 5 test)",
+  "description": "Split shipped with the local OSCD imagery archive (14 train / 10 test; no validation split)",
   "train": [
     "aguasclaras",
-    "berlin",
-    "brasilia",
-    "canberra",
-    "chongqing",
-    "dubai",
-    "hongkong",
-    "lasvegas",
-    "milano",
-    "norrkoping",
+    "bercy",
+    "bordeaux",
+    "nantes",
     "paris",
     "rennes",
-    "sao-paulo",
-    "shanghai"
-  ],
-  "val": [
+    "saclay_e",
     "abudhabi",
+    "cupertino",
+    "pisa",
     "beihai",
-    "bordeaux",
-    "madrid",
-    "montpellier"
-  ],
-  "test": [
+    "hongkong",
     "beirut",
-    "cambridge",
-    "cuiaba",
-    "dhanbad",
-    "rio"
+    "mumbai"
+  ],
+  "val": [],
+  "test": [
+    "brasilia",
+    "montpellier",
+    "norcia",
+    "rio",
+    "saclay_w",
+    "valencia",
+    "dubai",
+    "lasvegas",
+    "milano",
+    "chongqing"
   ]
 }

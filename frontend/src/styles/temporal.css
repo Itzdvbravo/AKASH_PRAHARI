@@ -823,3 +823,125 @@
     display: none;
   }
 }
+
+/* Analyst metadata and export tools */
+.temporal-analyst-panel,
+.temporal-analyst-tools {
+  margin: 1rem 1.25rem;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-card);
+}
+
+.temporal-panel-heading,
+.temporal-analyst-tools {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.temporal-panel-heading h3,
+.temporal-analyst-tools h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.temporal-panel-heading p,
+.temporal-analyst-tools p {
+  margin: 0.25rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
+.temporal-source-badge {
+  flex: 0 0 auto;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+
+.temporal-metadata-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem 1.25rem;
+  margin-top: 1rem;
+}
+
+.temporal-metadata-item {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.temporal-metadata-item span,
+.temporal-area-metrics span {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.temporal-metadata-item strong {
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.temporal-metadata-wide {
+  grid-column: span 2;
+}
+
+.temporal-area-metrics,
+.temporal-tool-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.temporal-area-metrics > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.temporal-area-metrics strong {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+}
+
+.temporal-tool-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.theme-light-card .temporal-analyst-panel,
+.theme-light-card .temporal-analyst-tools {
+  background: #fff;
+  border-color: #dbe3ee;
+}
+
+.theme-cyber-dark .temporal-analyst-panel,
+.theme-cyber-dark .temporal-analyst-tools {
+  background: #0d1524;
+}
+
+@media (max-width: 900px) {
+  .temporal-metadata-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .temporal-analyst-tools { flex-direction: column; }
+  .temporal-tool-actions { justify-content: flex-start; }
+}
+
+@media (max-width: 560px) {
+  .temporal-analyst-panel,
+  .temporal-analyst-tools { margin: 0.7rem; padding: 0.85rem; }
+  .temporal-panel-heading { flex-direction: column; }
+  .temporal-metadata-grid { grid-template-columns: 1fr; }
+  .temporal-metadata-wide { grid-column: auto; }
+  .temporal-area-metrics { width: 100%; justify-content: space-between; }
+}

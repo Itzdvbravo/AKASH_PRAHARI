@@ -11,6 +11,7 @@ from app.vector_store.store_interface import VectorStore
 from app.db.repositories.tile_repo import TileRepository
 from app.schemas.common import GeoBBox, Confidence, TileRef, SensorType
 from app.schemas.search import SearchResultItem, SearchFilters
+from app.geospatial.tiling import parse_tile_id
 
 import sys
 from pathlib import Path
@@ -38,7 +39,8 @@ class RetrievalService:
     ) -> List[SearchResultItem]:
         q_text = query.strip() if query and query.strip() else "satellite observation of geographic area"
         query_vec = self.embedding_model.encode_text(q_text)
-        matches = self.vector_store.search(query_vec, k=top_k * 2)
+        candidate_count = self.vector_store.size if filters else top_k * 2
+        matches = self.vector_store.search(query_vec, k=candidate_count)
 
         return self._format_results(matches, filters, top_k)
 
@@ -50,9 +52,30 @@ class RetrievalService:
             arr = np.array(pil_img.convert("RGB"), dtype=np.float32) / 255.0
 
         query_vec = self.embedding_model.encode_image(arr)
-        matches = self.vector_store.search(query_vec, k=top_k * 2)
+        candidate_count = self.vector_store.size if filters else top_k * 2
+        matches = self.vector_store.search(query_vec, k=candidate_count)
 
         return self._format_results(matches, filters, top_k)
+
+    def search_similar_sites(
+        self, image: np.ndarray, source_location: str, top_k: int = 10
+    ) -> List[SearchResultItem]:
+        """Find cross-location embedding neighbors for analyst-led discovery."""
+        query_vec = self.embedding_model.encode_image(np.asarray(image, dtype=np.float32))
+        matches = self.vector_store.search(query_vec, k=self.vector_store.size)
+        cross_site = []
+        seen_locations = {source_location.lower()}
+        for indexed_id, score in matches:
+            tile_id = indexed_id.rsplit("@", 1)[0] if "@" in indexed_id else indexed_id
+            record = self.tile_repo.get_any_by_id(tile_id)
+            location = record.location_id if record else parse_tile_id(tile_id)["location_id"]
+            if not location or location.lower() in seen_locations:
+                continue
+            seen_locations.add(location.lower())
+            cross_site.append((tile_id, score))
+            if len(cross_site) >= top_k:
+                break
+        return self._format_results(cross_site, None, top_k)
 
     def _format_results(
         self,
@@ -63,12 +86,22 @@ class RetrievalService:
         results: List[SearchResultItem] = []
         rank = 1
 
-        for tile_id, score in matches:
-            record = self.tile_repo.get_any_by_id(tile_id)
+        for indexed_id, score in matches:
+            # Incremental multi-date ingestion uses tile_id@date as the vector
+            # key while relational metadata remains keyed by tile_id/date.
+            tile_id, indexed_date = (
+                indexed_id.rsplit("@", 1) if "@" in indexed_id else (indexed_id, None)
+            )
+            dates = self.tile_repo.list_dates_for_tile(tile_id)
+            result_date = indexed_date if indexed_date in dates else (dates[-1] if dates else None)
+            record = (
+                self.tile_repo.get_by_id_and_date(tile_id, result_date)
+                if result_date else self.tile_repo.get_any_by_id(tile_id)
+            )
 
-            parts = tile_id.split("_")
-            loc_id = parts[0] if parts else "unknown"
-            sensor_str = parts[-1] if len(parts) > 1 else "sentinel-2"
+            tile_parts = parse_tile_id(tile_id)
+            loc_id = tile_parts["location_id"] or "unknown"
+            sensor_str = tile_parts["sensor"]
 
             if record:
                 loc_id = record.location_id
@@ -77,12 +110,11 @@ class RetrievalService:
                     bbox_dict = json.loads(record.bbox_json)
                 except Exception:
                     bbox_dict = OSCD_CITY_COORDINATES.get(loc_id, {"west": 0.0, "south": 0.0, "east": 0.05, "north": 0.05})
-                dates = self.tile_repo.list_dates_for_tile(tile_id)
                 cur_date = record.date
             else:
                 bbox_dict = OSCD_CITY_COORDINATES.get(loc_id, {"west": 0.0, "south": 0.0, "east": 0.05, "north": 0.05})
-                dates = ["2016-01-01", "2018-01-01"]
-                cur_date = dates[0]
+                dates = [indexed_date] if indexed_date else ["2016-01-01", "2018-01-01"]
+                cur_date = indexed_date or dates[0]
 
             # Apply filters
             if filters:
@@ -90,6 +122,15 @@ class RetrievalService:
                     continue
                 if filters.sensor and filters.sensor.value != "any" and filters.sensor.value != sensor_str:
                     continue
+                if filters.date_from and cur_date < filters.date_from:
+                    continue
+                if filters.date_to and cur_date > filters.date_to:
+                    continue
+                if filters.area_of_interest:
+                    aoi = filters.area_of_interest
+                    if (bbox_dict["east"] < aoi.west or bbox_dict["west"] > aoi.east
+                            or bbox_dict["north"] < aoi.south or bbox_dict["south"] > aoi.north):
+                        continue
 
             geo_bbox = GeoBBox(
                 west=bbox_dict["west"],
